@@ -41,7 +41,7 @@ Utilizes semantic HTML5 markup featuring `<ul class="json-tree">` as the primary
 
 ## 🤝 Development & Acknowledgments
 
-This project was developed through an interactive AI pair-programming collaboration between the author and Gemini (Google AI). The core architecture, custom CSS-driven icon logic, and responsive keyboard event modifiers were designed and iteratively refined through contextual conversation to achieve production-grade UI performance.
+This project was developed through an interactive AI pair-programming collaboration between the author and Gemini (Google AI). The core layout and CSS structural guides were inspired by the lightweight tree-view concept by Kate Morley (iamkate.com), which is dedicated to the public domain under CC0.
 
 ## 💻 Getting Started
 
