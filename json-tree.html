@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Skalowalne Drzewo Planu SQL</title>
+    <style name="demo">
+    :root {
+      --rounding: 4px;
+      --accent: #696;
+      --dark-grey: #ddd;
+      --grey: #eee;
+    }
+
+    *, ::before, ::after {
+      box-sizing: border-box;
+      margin: 0;
+    }
+
+    html {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-weight: 300;
+      line-height: 1.5;
+    }
+
+    body {
+      padding: 20px;
+      background-color: #fafafa;
+    }
+
+    h2 {
+      margin-bottom: 5px;
+      font-weight: 400;
+      color: #333;
+    }
+
+    p.subtitle {
+      color: #666;
+      margin-bottom: 25px;
+      font-size: 14px;
+    }
+    </style>
+    <style name="tree-styles">
+    /* ==========================================================================
+       KOMPONENT DRZEWA (Core Styles)
+       ========================================================================== */
+    
+    .json-tree {
+      --spacing: 1.5rem; /* Odstęp pionowy i poziomy między poziomami drzewa */
+      --radius: 10px;    /* Promień/Zasięg dla linii pomocniczych i ikon */
+      padding-left: 1rem;
+      list-style: none;
+    }
+
+    /* Pojedynczy węzeł drzewa - rezerwuje przestrzeń z lewej strony na linie i ikony */
+    .json-tree li {
+      display: block;
+      position: relative;
+      padding-left: calc(2 * var(--spacing) - var(--radius) - 2px);
+    }
+
+    /* Lista podrzędna (dzieci) - przesunięcie, by linie idealnie trafiały w węzły */
+    .json-tree ul {
+      margin-left: calc(var(--radius) - var(--spacing));
+      padding-left: 0;
+      list-style: none;
+    }
+
+    /* LINIE STRUKTURALNE */
+    .json-tree ul li {
+      border-left: 2px solid var(--dark-grey);
+    }
+
+    /* Ukrycie linii pionowej dla ostatniego dziecka w danej gałęzi */
+    .json-tree ul li:last-child {
+      border-color: transparent;
+    }
+
+    /* Rysowanie poziomej "gałązki" (zagięcia L) prowadzącej do każdego elementu */
+    .json-tree ul li::before {
+      content: '';
+      display: block;
+      position: absolute;
+      top: calc(var(--spacing) / -2);
+      left: -2px;
+      width: calc(var(--spacing) + 2px);
+      height: calc(var(--spacing) + 1px);
+      border: solid var(--dark-grey);
+      border-width: 0 0 2px 2px;
+    }
+
+    /* ETYKIETY WĘZŁÓW (Klikalny Tekst) */
+    .json-tree li span.tree-node-text {
+      display: inline-block;
+      cursor: pointer;
+      position: relative;
+      transition: color 0.15s ease, font-weight 0.15s ease;
+      font-family: monospace;
+      font-size: 13px;
+      color: #444;
+      white-space: nowrap;
+    }
+
+    /* Klasa aplikowana przez JS po kliknięciu w tekst */
+    .json-tree li span.tree-node-text.active-branch {
+      color: var(--accent);
+      font-weight: bold;
+      background-color: var(--grey);
+      padding: 0 6px;
+      border-radius: var(--rounding);
+    }
+
+    /* KONTENER IKONY (HTML <summary>) */
+    .json-tree summary {
+      display: block;
+      margin-left: calc(-2 * var(--spacing) + var(--radius) + 2px);
+      padding-left: calc(2 * var(--spacing) - var(--radius) - 2px);
+    }
+
+    /* Ukrycie natywnych trójkątów <summary> przeglądarki */
+    .json-tree summary::marker,
+    .json-tree summary::-webkit-details-marker {
+      display: none;
+    }
+
+    /* Usunięcie domyślnej ramki focusa z przeglądarki */
+    .json-tree summary:focus {
+      outline: none;
+    }
+
+    /* ==========================================================================
+       IKONY INTERAKTYWNE (Dynamiczne Trójkąty i Działający Hover dla Wszystkich)
+       ========================================================================== */
+    
+    /* 1. Stan domyślny: Gałąź ZAMKNIĘTA -> Trójkąt skierowany w PRAWO, biały w środku */
+    .json-tree summary::before {
+      content: '';
+      display: block;
+      position: absolute;
+      top: calc(var(--spacing) / 2 - var(--radius));
+      left: calc(var(--spacing) - var(--radius) - 1px);
+      width: calc(2 * var(--radius));
+      height: calc(2 * var(--radius));
+      z-index: 1;
+      border-radius: 0; 
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath d='M8 5v14l11-7z' fill='white' stroke='%23555' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") center center / 12px no-repeat;
+      transition: transform 0.2s ease, background-color 0.2s ease, border-radius 0.2s ease;
+    }
+
+    /* 2. Stan: Gałąź OTWARTA -> Obrót w dół i pełne wypełnienie */
+    .json-tree details[open] > summary::before {
+      transform: rotate(90deg);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath d='M8 5v14l11-7z' fill='%23555'/%3E%3C/svg%3E");
+    }
+
+    /* 3. WYJĄTEK DLA KORZENIA (W stanie spoczynku): Podmiana na czarny kwadrat (bez rotacji) */
+    .json-tree > li > details > summary::before {
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Crect x='0' y='0' width='24' height='24' fill='%23333'/%3E%3C/svg%3E") center center / 6px no-repeat;
+    }
+    .json-tree > li > details[open] > summary::before {
+      transform: none; 
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Crect x='0' y='0' width='24' height='24' fill='%23333'/%3E%3C/svg%3E");
+    }
+
+    /* 4. TYLKO HOVER: Zamiana w zielone kółko z plusem (+) - działa również na korzeniu */
+    .json-tree summary:hover::before {
+      border-radius: 50% !important;
+      background-color: var(--accent) !important;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M5 10h10M10 5v10' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") !important;
+      background-size: auto !important; 
+      background-position: center center !important;
+      background-repeat: no-repeat !important;
+      transform: none !important; 
+    }
+
+    /* 5. TYLKO HOVER: Zamiana w zielone kółko z minusem (-) dla otwartych - działa również na korzeniu */
+    .json-tree details[open] > summary:hover::before {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M5 10h10' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") !important;
+      transform: none !important;
+    }
+    </style>
+</head>
+<body>
+
+  <h2>Zaawansowany Plan Wykonania Zapytania SQL</h2>
+  <p class="subtitle">Poprawna struktura binarna (Kliknięcie z <strong>Ctrl</strong> na kółko rozwija/zwija całe poddrzewo)</p>
+  
+  <ul id="sql-plan-tree" class="json-tree"></ul>
+
+  <script name="demo">
+
+    function formatPlanLabel(node) {
+      const objectInfo = node.object_name ? ` [${node.object_name}]` : '';
+      const optionsInfo = node.options ? ` (${node.options})` : '';
+      const statsInfo = ` | Koszt wierszy: ${node.card}, Czas: ${node.elapsed_ms}ms`;
+      
+      return `${node.operation}${optionsInfo}${objectInfo}${statsInfo}`;
+    }
+
+    function generateLargeSqlPlan(count) {
+      const operations = ["HASH JOIN", "NESTED LOOPS", "MERGE JOIN", "TABLE ACCESS", "INDEX", "SORT", "FILTER", "VIEW"];
+      const options = ["FULL", "RANGE SCAN", "UNIQUE SCAN", "JOIN FAST FULL SCAN", "ORDER BY", "GROUP BY", ""];
+      const tables = ["ORDERS", "CUSTOMERS", "INVOICES", "PRODUCTS", "LINE_ITEMS", "PAYMENTS", "USERS", "LOGS"];
+      const rows = [];
+      const childrenCountMap = {};
+
+      rows.push({ id: 0, parent_id: null, operation: "SELECT STATEMENT", options: "", card: 50000, elapsed_ms: 1420 });
+      childrenCountMap[0] = 0;
+
+      for (let i = 1; i < count; i++) {
+        let parentId = null;
+        let attempts = 0;
+
+        while (parentId === null) {
+          let potentialParent = Math.floor(Math.random() * i);
+          if (childrenCountMap[potentialParent] < 2) {
+            parentId = potentialParent;
+          } 
+
+          attempts++;
+          if (attempts > 100) {
+            for (let j = 0; j < i; j++) {
+              if (childrenCountMap[j] < 2) {
+                parentId = j;
+                break;
+              }
+            }
+          }
+        }
+
+        childrenCountMap[parentId]++;
+        childrenCountMap[i] = 0;
+
+        const op = operations[Math.floor(Math.random() * operations.length)];
+        const opt = (op === "TABLE ACCESS" || op === "INDEX" || op === "SORT") ? options[Math.floor(Math.random() * options.length)] : "";
+        const tableName = (op === "TABLE ACCESS" || op === "INDEX") ? tables[Math.floor(Math.random() * tables.length)] : null;
+
+        rows.push({
+          id: i,
+          parent_id: parentId,
+          operation: op,
+          options: opt,
+          object_name: tableName,
+          card: Math.floor(Math.random() * 1000) + 1,
+          elapsed_ms: Math.floor(Math.random() * 50)
+        });
+      }
+      return rows;
+    }
+
+    const sqlPlanRows = generateLargeSqlPlan(200);
+
+    function buildTreeStructure(rows) {
+      const idMap = {};
+      let root = null;
+
+      rows.forEach(row => {
+        idMap[row.id] = { ...row, children: [] };
+      });
+
+      rows.forEach(row => {
+        const mappedNode = idMap[row.id];
+        if (row.parent_id === null || row.parent_id === undefined) {
+          root = mappedNode;
+        } else {
+          const parentNode = idMap[row.parent_id];
+          if (parentNode) {
+            parentNode.children.push(mappedNode);
+          }
+        }
+      });
+
+      return root;
+    }
+
+    function renderTreeDOM(node) {
+      const li = document.createElement('li');
+      const labelText = formatPlanLabel(node);
+
+      if (node.children && node.children.length > 0) {
+        const details = document.createElement('details');
+        
+        if (node.id < 10) details.open = true;
+
+        const summary = document.createElement('summary');
+        const span = document.createElement('span');
+        span.className = 'tree-node-text';
+        span.textContent = labelText;
+        span.setAttribute('data-id', node.id);
+
+        summary.appendChild(span);
+        details.appendChild(summary);
+
+        const ul = document.createElement('ul');
+        node.children.forEach(child => {
+          ul.appendChild(renderTreeDOM(child));
+        });
+        
+        details.appendChild(ul);
+        li.appendChild(details);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'tree-node-text';
+        span.textContent = labelText;
+        span.setAttribute('data-id', node.id);
+        li.appendChild(span);
+      }
+
+      return li;
+    }
+
+    function setupTreeEventListeners(treeContainer) {
+      // 1. GŁÓWNA OBSŁUGA KLIKNIĘĆ (w tym akcja z Ctrl na ikony)
+      treeContainer.addEventListener('click', (e) => {
+        const clickedSummary = e.target.closest('summary');
+        const clickedSpan = e.target.closest('.tree-node-text');
+
+        // Sytuacja A: Kliknięto w ikonę gałęzi (element <summary>)
+        if (clickedSummary && !clickedSpan) {
+          if (e.ctrlKey) {
+            // Blokujemy domyślne zachowanie pojedynczego elementu details
+            e.preventDefault(); 
+            
+            const currentDetails = clickedSummary.closest('details');
+            if (currentDetails) {
+              // Sprawdzamy obecny stan: jeśli jest otwarty -> będziemy zamykać wszystko. I odwrotnie.
+              const shouldOpen = !currentDetails.open;
+              
+              // Znajdujemy bieżący element oraz wszystkie zagnieżdżone w nim sekcje <details>
+              const allChildDetails = currentDetails.querySelectorAll('details');
+              
+              currentDetails.open = shouldOpen;
+              allChildDetails.forEach(detailsEl => {
+                detailsEl.open = shouldOpen;
+              });
+            }
+          }
+          return; // Wychodzimy, kliknięto samą ikonę
+        }
+
+        // Sytuacja B: Kliknięto w tekst etykiety (span)
+        if (clickedSpan) {
+          // Jeśli tekst leży wewnątrz <summary>, blokujemy domyślne otwieranie/zamykanie przez przeglądarkę
+          if (clickedSpan.closest('summary')) {
+            e.preventDefault(); 
+          }
+
+          // Efekt podświetlenia wybranej linii
+          treeContainer.querySelectorAll('.tree-node-text').forEach(el => el.classList.remove('active-branch'));
+          clickedSpan.classList.add('active-branch');
+          
+          const nodeId = clickedSpan.getAttribute('data-id');
+          console.log(`Zaznaczono rekord bazy danych o wewnętrznym ID: ${nodeId}`);
+        }
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const treeContainer = document.getElementById('sql-plan-tree');
+      const nestedTreeData = buildTreeStructure(sqlPlanRows);
+
+      if (nestedTreeData) {
+        treeContainer.appendChild(renderTreeDOM(nestedTreeData));
+      }
+      
+      setupTreeEventListeners(treeContainer);
+    });
+  </script>
+
+</body>
+</html>
