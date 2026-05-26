@@ -22,6 +22,31 @@
     body {
       padding: 20px;
       background-color: #fafafa;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    .layout {
+      display: flex;
+      gap: 30px;
+      flex: 1;
+      overflow: hidden;
+    }
+    .tree-side {
+      flex: 2;
+      overflow-y: auto;
+      padding-right: 15px;
+    }
+    .info-side {
+      flex: 1;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 20px;
+      position: sticky;
+      top: 0;
+      height: fit-content;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     }
     h2 {
       margin-bottom: 5px;
@@ -33,38 +58,81 @@
       margin-bottom: 25px;
       font-size: 14px;
     }
+    .controls {
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 6px 12px;
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      border-radius: var(--rounding);
+      margin-right: 5px;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #f0f0f0;
+    }
+    .info-box {
+      background: #fcfcfc;
+      border: 1px dashed #ccc;
+      padding: 10px;
+      margin-top: 10px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      border-radius: var(--rounding);
+    }
+
+    /* Style dla dynamicznych ikon wewnątrz drzewa */
+    .node-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cost-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .cost-low { background-color: #4caf50; }
+    .cost-medium { background-color: #ff9800; }
+    .cost-high { background-color: #f44336; }
+    .node-meta {
+      color: #888;
+      font-size: 11px;
+      margin-left: 10px;
+    }
     </style>
     <style name="tree-styles">
     /* ==========================================================================
        KOMPONENT DRZEWA (Core Styles)
        ========================================================================== */
     .json-tree {
-      --spacing: 1.5rem; /* Odstęp pionowy i poziomy między poziomami drzewa */
-      --radius: 10px;    /* Promień/Zasięg dla linii pomocniczych i ikon */
+      --spacing: 1.5rem; 
+      --radius: 10px;    
       padding-left: 1rem;
       list-style: none;
     }
-    /* Pojedynczy węzeł drzewa - rezerwuje przestrzeń z lewej strony na linie i ikony */
     .json-tree li {
       display: block;
       position: relative;
       padding-left: calc(2 * var(--spacing) - var(--radius) - 2px);
     }
-    /* Lista podrzędna (dzieci) - przesunięcie, by linie idealnie trafiały w węzły */
     .json-tree ul {
       margin-left: calc(var(--radius) - var(--spacing));
       padding-left: 0;
       list-style: none;
     }
-    /* LINIE STRUKTURALNE */
     .json-tree ul li {
       border-left: 2px solid var(--dark-grey);
     }
-    /* Ukrycie linii pionowej dla ostatniego dziecka w danej gałęzi */
     .json-tree ul li:last-child {
       border-color: transparent;
     }
-    /* Rysowanie poziomej "gałązki" (zagięcia L) prowadzącej do każdego elementu */
     .json-tree ul li::before {
       content: '';
       display: block;
@@ -77,7 +145,6 @@
       border-width: 0 0 2px 2px;
     }
     
-    /* ETYKIETY WĘZŁÓW (Tekst Opisu) */
     .json-tree li span.tree-node-text {
       display: inline-block;
       cursor: pointer;
@@ -91,43 +158,32 @@
       border-radius: var(--rounding);
     }
 
-    /* ==========================================================================
-       KLASA HOVER: EFEKT NAJECHANIA NA OPIS MYSZKĄ
-       Modyfikuj poniższe właściwości, aby łatwo zmienić wygląd elementu po najechaniu.
-       ========================================================================== */
     .json-tree li span.tree-node-text:hover {
-      color: #2e7d32;               /* Nowy kolor tekstu przy najechaniu (ciemnozielony) */
-      background-color: #e8f5e9;    /* Delikatne zielone tło pod tekstem */
-      font-weight: bold;            /* Pogrubienie opisu */
+      color: #2e7d32;               
+      background-color: #e8f5e9;    
+      font-weight: bold;            
     }
 
-    /* Klasa aplikowana przez JS po kliknięciu w tekst (wybrana / aktywna gałąź) */
     .json-tree li span.tree-node-text.active-branch {
       color: var(--accent) !important;
       font-weight: bold !important;
       background-color: var(--grey) !important;
     }
     
-    /* KONTENER IKONY (HTML <summary>) */
     .json-tree summary {
       display: block;
       margin-left: calc(-2 * var(--spacing) + var(--radius) + 2px);
       padding-left: calc(2 * var(--spacing) - var(--radius) - 2px);
     }
-    /* Ukrycie natywnych trójkątów <summary> przeglądarki */
     .json-tree summary::marker,
     .json-tree summary::-webkit-details-marker {
       display: none;
     }
-    /* Usunięcie domyślnej ramki focusa z przeglądarki */
     .json-tree summary:focus {
       outline: none;
     }
     
-    /* ==========================================================================
-       IKONY INTERAKTYWNE (Dynamiczne Trójkąty i Działający Hover dla Wszystkich)
-       ========================================================================== */
-    /* 1. Stan domyślny: Gałąź ZAMKNIĘTA -> Trójkąt skierowany w PRAWO, biały w środku */
+    /* IKONY INTERAKTYWNE */
     .json-tree summary::before {
       content: '';
       display: block;
@@ -139,202 +195,219 @@
       z-index: 1;
       border-radius: 0; 
       background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath d='M8 5v14l11-7z' fill='white' stroke='%23555' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") center center / 12px no-repeat;
-      transition: transform 0.2s ease, background-color 0.2s ease, border-radius 0.2s ease;
     }
-    /* 2. Stan: Gałąź OTWARTA -> Obrót w dół i pełne wypełnienie */
     .json-tree details[open] > summary::before {
-      transform: rotate(90deg);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath d='M8 5v14l11-7z' fill='%23555'/%3E%3C/svg%3E");
     }
-    /* 3. WYJĄTEK DLA KORZENIA (W stanie spoczynku): Podmiana na czarny kwadrat (bez rotacji) */
     .json-tree > li > details > summary::before {
       background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Crect x='0' y='0' width='24' height='24' fill='%23333'/%3E%3C/svg%3E") center center / 6px no-repeat;
     }
     .json-tree > li > details[open] > summary::before {
-      transform: none; 
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Crect x='0' y='0' width='24' height='24' fill='%23333'/%3E%3C/svg%3E");
     }
-    /* 4. TYLKO HOVER: Zamiana w zielone kółko z plusem (+) - działa również na korzeniu */
     .json-tree summary:hover::before {
-      border-radius: 50% !important;
+      border-radius: 50% !important; 
       background-color: var(--accent) !important;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M5 10h10M10 5v10' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") !important;
       background-size: auto !important; 
       background-position: center center !important;
       background-repeat: no-repeat !important;
-      transform: none !important; 
     }
-    /* 5. TYLKO HOVER: Zamiana w zielone kółko z minusem (-) dla otwartych - działa również na korzeniu */
     .json-tree details[open] > summary:hover::before {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M5 10h10' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") !important;
-      transform: none !important;
+    }
+
+    /* ==========================================================================
+       POPRAWIONA OBSŁUGA ATRYBUTU circle="off"
+       ========================================================================== */
+    /* Zablokuj zamianę tła ikony plus/minus w zielone kółko na hoverze */
+    [circle="off"] .json-tree summary:hover::before {
+      border-radius: 0 !important;
+      background-color: transparent !important;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath d='M8 5v14l11-7z' fill='white' stroke='%23555' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+      background-size: 12px no-repeat !important;
+    }
+    [circle="off"] .json-tree details[open] > summary:hover::before {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath d='M8 5v14l11-7z' fill='%23555'/%3E%3C/svg%3E") !important;
+    }
+    [circle="off"] .json-tree > li > details > summary:hover::before {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Crect x='0' y='0' width='24' height='24' fill='%23333'/%3E%3C/svg%3E") !important;
+      background-size: 6px no-repeat !important;
     }
     </style>
 </head>
 <body>
 
-  <h2>Zaawansowany Plan Wykonania Zapytania SQL</h2>
-  <p class="subtitle">Poprawna struktura binarna (Kliknięcie z <strong>Ctrl</strong> na kółko rozwija/zwija całe poddrzewo)</p>
+  <h2>Plan Wykonania SQL</h2>
+  <p class="subtitle">Zielone kółka interakcji na hoverze znikają całkowicie po ustawieniu atrybutu.</p>
   
-  <ul id="sql-plan-tree" class="json-tree"></ul>
-
-  <script name="demo">
-    function formatPlanLabel(node) {
-      const objectInfo = node.object_name ? ` [${node.object_name}]` : '';
-      const optionsInfo = node.options ? ` (${node.options})` : '';
-      const statsInfo = ` | Koszt wierszy: ${node.card}, Czas: ${node.elapsed_ms}ms`;
+  <div class="layout">
+    <div class="tree-side">
+      <div class="controls">
+        <button id="btn-expand">Rozwiń wszystko</button>
+        <button id="btn-collapse">Zwiń wszystko</button>
+        <button id="btn-toggle-circle">Przełącz kółka (on/off)</button>
+      </div>
       
-      return `${node.operation}${optionsInfo}${objectInfo}${statsInfo}`;
-    }
+      <div id="plan-container" circle="on"></div>
+    </div>
 
+    <div class="info-side">
+      <h3>Zewnętrzny Monitor Zdarzeń</h3>
+      <p style="font-size:13px; color:#666;">Wszystkie dane poniżej pochodzą z zarejestrowanych w API callbacków.</p>
+      
+      <h4 style="margin-top:15px; font-weight:400;">Ostatnie Kliknięcie (onNodeClick):</h4>
+      <div id="click-info" class="info-box">Brak danych (Kliknij węzeł)</div>
+
+      <h4 style="margin-top:15px; font-weight:400;">Aktualny Hover (onNodeHover):</h4>
+      <div id="hover-info" class="info-box">Brak danych (Najedź na węzeł)</div>
+    </div>
+  </div>
+
+  <script name="class-implementation">
+    class JsonTree {
+      #rows; #container; #labelFormatter; #activeNodeId = null;
+      #idKey; #parentKey; #onClickCallback = null; #onHoverCallback = null;
+
+      constructor({ data, targetElement, formatter, mapping = {} }) {
+        this.#rows = data; this.#container = targetElement; this.#labelFormatter = formatter;
+        this.#idKey = mapping.id || 'id'; this.#parentKey = mapping.parentId || 'parent_id';
+        this.#init();
+      }
+      #init() {
+        if (!this.#container) return;
+        const nestedData = this.#buildTreeStructure(this.#rows);
+        const ulRoot = document.createElement('ul');
+        ulRoot.className = 'json-tree';
+        if (nestedData) ulRoot.appendChild(this.#renderTreeDOM(nestedData));
+        this.#container.appendChild(ulRoot);
+        this.#setupEventListeners(ulRoot);
+      }
+      #buildTreeStructure(rows) {
+        const idMap = {}; let root = null;
+        rows.forEach(row => { idMap[row[this.#idKey]] = { ...row, children: [] }; });
+        rows.forEach(row => {
+          const mappedNode = idMap[row[this.#idKey]]; const parentValue = row[this.#parentKey];
+          if (parentValue === null || parentValue === undefined) root = mappedNode;
+          else if (idMap[parentValue]) idMap[parentValue].children.push(mappedNode);
+        });
+        return root;
+      }
+      #renderTreeDOM(node) {
+        const li = document.createElement('li');
+        const labelHTML = this.#labelFormatter(node); const nodeId = node[this.#idKey];
+        if (node.children && node.children.length > 0) {
+          const details = document.createElement('details');
+          if (nodeId < 10) details.open = true;
+          const summary = document.createElement('summary');
+          const span = document.createElement('span');
+          span.className = 'tree-node-text'; span.innerHTML = labelHTML; span.setAttribute('data-id', nodeId);
+          summary.appendChild(span); details.appendChild(summary);
+          const ul = document.createElement('ul');
+          node.children.forEach(child => { ul.appendChild(this.#renderTreeDOM(child)); });
+          details.appendChild(ul); li.appendChild(details);
+        } else {
+          const span = document.createElement('span');
+          span.className = 'tree-node-text'; span.innerHTML = labelHTML; span.setAttribute('data-id', nodeId);
+          li.appendChild(span);
+        }
+        return li;
+      }
+      #findNodeDataById(id) { return this.#rows.find(row => row[this.#idKey] == id) || null; }
+      #setupEventListeners(treeRoot) {
+        treeRoot.addEventListener('click', (e) => {
+          const clickedSummary = e.target.closest('summary'); const clickedSpan = e.target.closest('.tree-node-text');
+          if (clickedSummary && !clickedSpan) {
+            if (e.ctrlKey) {
+              e.preventDefault(); const currentDetails = clickedSummary.closest('details');
+              if (currentDetails) {
+                const shouldOpen = !currentDetails.open; currentDetails.open = shouldOpen;
+                currentDetails.querySelectorAll('details').forEach(d => d.open = shouldOpen);
+              }
+            } return;
+          }
+          if (clickedSpan) {
+            if (clickedSpan.closest('summary')) e.preventDefault();
+            treeRoot.querySelectorAll('.tree-node-text').forEach(el => el.classList.remove('active-branch'));
+            clickedSpan.classList.add('active-branch'); this.#activeNodeId = clickedSpan.getAttribute('data-id');
+            if (this.#onClickCallback) this.#onClickCallback(this.#findNodeDataById(this.#activeNodeId), clickedSpan);
+          }
+        });
+        treeRoot.addEventListener('mouseover', (e) => {
+          const hoveredSpan = e.target.closest('.tree-node-text');
+          if (hoveredSpan && this.#onHoverCallback) {
+            const nodeId = hoveredSpan.getAttribute('data-id');
+            this.#onHoverCallback(this.#findNodeDataById(nodeId), hoveredSpan);
+          }
+        });
+      }
+      getAPI() {
+        return {
+          getActiveId: () => this.#activeNodeId,
+          expandAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = true); },
+          collapseAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = false); },
+          onNodeClick: (cb) => { if (typeof cb === 'function') this.#onClickCallback = cb; },
+          onNodeHover: (cb) => { if (typeof cb === 'function') this.#onHoverCallback = cb; }
+        };
+      }
+    }
+  </script>
+
+  <script name="external-generator-and-runner">
     function generateLargeSqlPlan(count) {
       const operations = ["HASH JOIN", "NESTED LOOPS", "MERGE JOIN", "TABLE ACCESS", "INDEX", "SORT", "FILTER", "VIEW"];
-      const options = ["FULL", "RANGE SCAN", "UNIQUE SCAN", "JOIN FAST FULL SCAN", "ORDER BY", "GROUP BY", ""];
-      const tables = ["ORDERS", "CUSTOMERS", "INVOICES", "PRODUCTS", "LINE_ITEMS", "PAYMENTS", "USERS", "LOGS"];
-      const rows = [];
-      const childrenCountMap = {};
-      
-      rows.push({ id: 0, parent_id: null, operation: "SELECT STATEMENT", options: "", card: 50000, elapsed_ms: 1420 });
-      childrenCountMap[0] = 0;
-      
+      const options = ["FULL", "RANGE SCAN", "UNIQUE SCAN", "JOIN FAST FULL SCAN", ""];
+      const tables = ["ORDERS", "CUSTOMERS", "INVOICES", "PRODUCTS"];
+      const rows = []; const childrenCountMap = { 0: 0 };
+      rows.push({ nodeUID: 0, parentUID: null, operation: "SELECT STATEMENT", options: "", card: 50000, elapsed_ms: 1420 });
       for (let i = 1; i < count; i++) {
         let parentId = null;
-        let attempts = 0;
-        while (parentId === null) {
-          let potentialParent = Math.floor(Math.random() * i);
-          if (childrenCountMap[potentialParent] < 2) {
-            parentId = potentialParent;
-          } 
-          attempts++;
-          if (attempts > 100) {
-            for (let j = 0; j < i; j++) {
-              if (childrenCountMap[j] < 2) {
-                parentId = j;
-                break;
-              }
-            }
-          }
-        }
-        childrenCountMap[parentId]++;
-        childrenCountMap[i] = 0;
-        
+        for (let j = 0; j < i; j++) { if (childrenCountMap[j] < 2) { parentId = j; break; } }
+        childrenCountMap[parentId]++; childrenCountMap[i] = 0;
         const op = operations[Math.floor(Math.random() * operations.length)];
-        const opt = (op === "TABLE ACCESS" || op === "INDEX" || op === "SORT") ? options[Math.floor(Math.random() * options.length)] : "";
+        const opt = (op === "TABLE ACCESS" || op === "INDEX") ? options[Math.floor(Math.random() * options.length)] : "";
         const tableName = (op === "TABLE ACCESS" || op === "INDEX") ? tables[Math.floor(Math.random() * tables.length)] : null;
-        
-        rows.push({
-          id: i,
-          parent_id: parentId,
-          operation: op,
-          options: opt,
-          object_name: tableName,
-          card: Math.floor(Math.random() * 1000) + 1,
-          elapsed_ms: Math.floor(Math.random() * 50)
-        });
+        rows.push({ nodeUID: i, parentUID: parentId, operation: op, options: opt, object_name: tableName, card: Math.floor(Math.random() * 1000) + 1, elapsed_ms: Math.floor(Math.random() * 50) });
       }
       return rows;
     }
 
-    const sqlPlanRows = generateLargeSqlPlan(200);
-
-    function buildTreeStructure(rows) {
-      const idMap = {};
-      let root = null;
-      rows.forEach(row => {
-        idMap[row.id] = { ...row, children: [] };
-      });
-      rows.forEach(row => {
-        const mappedNode = idMap[row.id];
-        if (row.parent_id === null || row.parent_id === undefined) {
-          root = mappedNode;
-        } else {
-          const parentNode = idMap[row.parent_id];
-          if (parentNode) {
-            parentNode.children.push(mappedNode);
-          }
-        }
-      });
-      return root;
-    }
-
-    function renderTreeDOM(node) {
-      const li = document.createElement('li');
-      const labelText = formatPlanLabel(node);
-      
-      if (node.children && node.children.length > 0) {
-        const details = document.createElement('details');
-        if (node.id < 10) details.open = true;
-        
-        const summary = document.createElement('summary');
-        const span = document.createElement('span');
-        span.className = 'tree-node-text';
-        span.textContent = labelText;
-        span.setAttribute('data-id', node.id);
-        
-        summary.appendChild(span);
-        details.appendChild(summary);
-        
-        const ul = document.createElement('ul');
-        node.children.forEach(child => {
-          ul.appendChild(renderTreeDOM(child));
-        });
-        
-        details.appendChild(ul);
-        li.appendChild(details);
-      } else {
-        const span = document.createElement('span');
-        span.className = 'tree-node-text';
-        span.textContent = labelText;
-        span.setAttribute('data-id', node.id);
-        li.appendChild(span);
-      }
-      return li;
-    }
-
-    function setupTreeEventListeners(treeContainer) {
-      treeContainer.addEventListener('click', (e) => {
-        const clickedSummary = e.target.closest('summary');
-        const clickedSpan = e.target.closest('.tree-node-text');
-        
-        // Kliknięto w ikonę gałęzi (strzałkę/kółko)
-        if (clickedSummary && !clickedSpan) {
-          if (e.ctrlKey) {
-            e.preventDefault(); 
-            const currentDetails = clickedSummary.closest('details');
-            if (currentDetails) {
-              const shouldOpen = !currentDetails.open;
-              const allChildDetails = currentDetails.querySelectorAll('details');
-              
-              currentDetails.open = shouldOpen;
-              allChildDetails.forEach(detailsEl => {
-                detailsEl.open = shouldOpen;
-              });
-            }
-          }
-          return;
-        }
-        
-        // Kliknięto w tekst opisu węzła
-        if (clickedSpan) {
-          if (clickedSpan.closest('summary')) {
-            e.preventDefault(); 
-          }
-          treeContainer.querySelectorAll('.tree-node-text').forEach(el => el.classList.remove('active-branch'));
-          clickedSpan.classList.add('active-branch');
-          
-          const nodeId = clickedSpan.getAttribute('data-id');
-          console.log(`Zaznaczono rekord o wewnętrznym ID: ${nodeId}`);
-        }
-      });
+    function sqlLabelFormatter(node) {
+      const objectInfo = node.object_name ? ` [${node.object_name}]` : '';
+      const optionsInfo = node.options ? ` (${node.options})` : '';
+      let dotClass = node.card > 800 ? 'cost-high' : (node.card > 400 ? 'cost-medium' : 'cost-low');
+      return `
+        <span class="node-badge">
+          <i class="cost-dot ${dotClass}"></i>
+          <strong>${node.operation}</strong>${optionsInfo}${objectInfo}
+          <span class="node-meta">(Rows: ${node.card}, Time: ${node.elapsed_ms}ms)</span>
+        </span>
+      `;
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-      const treeContainer = document.getElementById('sql-plan-tree');
-      const nestedTreeData = buildTreeStructure(sqlPlanRows);
-      if (nestedTreeData) {
-        treeContainer.appendChild(renderTreeDOM(nestedTreeData));
-      }
-      setupTreeEventListeners(treeContainer);
+      const planTree = new JsonTree({
+        data: generateLargeSqlPlan(40),
+        targetElement: document.getElementById('plan-container'),
+        formatter: sqlLabelFormatter,
+        mapping: { id: 'nodeUID', parentId: 'parentUID' }
+      });
+      const treeAPI = planTree.getAPI();
+      treeAPI.onNodeClick((nodeData, element) => {
+        document.getElementById('click-info').innerHTML = JSON.stringify({ nodeUID: nodeData.nodeUID, operacja: nodeData.operation, tekst: element.textContent.trim().replace(/\s+/g, ' ') }, null, 2);
+      });
+      treeAPI.onNodeHover((nodeData) => {
+        document.getElementById('hover-info').innerHTML = `NodeUID: ${nodeData.nodeUID}\nOperacja: ${nodeData.operation}`;
+      });
+      document.getElementById('btn-expand').addEventListener('click', () => treeAPI.expandAll());
+      document.getElementById('btn-collapse').addEventListener('click', () => treeAPI.collapseAll());
+      
+      // Obsługa nowego przycisku przełączania kółek
+      document.getElementById('btn-toggle-circle').addEventListener('click', () => {
+        const container = document.getElementById('plan-container');
+        const currentStatus = container.getAttribute('circle');
+        container.setAttribute('circle', currentStatus === 'on' ? 'off' : 'on');
+      });
     });
   </script>
 </body>
