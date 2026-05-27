@@ -1,54 +1,70 @@
-# Scalable Binary SQL Execution Plan Tree (JSON-Tree)
+# Scalable Binary SQL Execution Plan Tree (JsonTree)
 
-Language: **English** | [Polski (Polish)](README.pl.md)
+Language: **English (Angielski)** | [Polish (Polski)](README.md)
 
 ---
 
-An interactive, high-performance tree component designed for visualizing database SQL execution plans (e.g., Oracle/PostgreSQL Explain Plan). The component dynamically generates and renders a strict **binary tree structure** (a maximum of two child nodes per operator to accurately simulate database joins like `HASH JOIN` or `NESTED LOOPS`), handling a comprehensive mock dataset of **200 complex database operations**.
+An interactive, high-performance tree component built to visualize database SQL query execution plans (e.g., Oracle/PostgreSQL Explain Plan). The component generates and renders a binary structure (a maximum of two child nodes for each operator, such as `HASH JOIN` or `NESTED LOOPS`), simulating a real-world execution plan consisting of **multiple complex operations**.
 
-The project is built entirely using a lightweight vanilla stack: **HTML5, CSS3, and ECMAScript 6**, without any external libraries or framework dependencies.
+The project is implemented using a clean technology stack of **Vanilla HTML5, CSS3, and ECMAScript 6 (built on an Object-Oriented architecture)**, completely free of external libraries or third-party dependencies.
 
 ## 🚀 Key Features
 
-* **Strict Binary Structure:** The generation algorithm ensures that no parent node has more than 2 children, mirroring the actual execution logic of binary database engines.
-* **High Performance:** Smooth rendering and ultra-fast interaction handling for 200+ dynamic records using **Event Delegation**.
-* **Smart Icon System (CSS Pseudoelements):**
-    * **Collapsed State:** Represented by a minimalist, right-pointing triangle that is **hollow (white inside)** with a sharp dark-grey border.
-    * **Expanded State:** Smoothly animates into a 90° downward rotation and automatically transitions into a solid, filled triangle shape.
-    * **Root Node Exception:** The main query entry point (ID: 0, `SELECT STATEMENT`) features a permanent, static black square icon, symbolizing the start/end point of the execution flow.
-* **Dynamic Hover Effects:** Hovering over any active icon (including the root node) instantly transforms it into a green action circle containing a `+` symbol (for collapsed branches) or a `-` symbol (for expanded branches).
+* **True Binary Structure:** The generation algorithm ensures that no node (except leaves) has more than 2 children, precisely reflecting the actual logic of database binary joins.
+* **Modern Class-Based Architecture:** The entire component logic is encapsulated within a self-contained `JsonTree` class utilizing private fields and methods (`#`). This ensures complete code encapsulation and prevents scope pollution.
+* **Full Keyboard Navigation (Arrow Keys):** The component supports intuitive keyboard-driven control directly out of the box:
+* `Arrow Up` / `Arrow Down` — Seamlessly navigate and activate the next/previous visible tree branch, complete with automatic centering (*scroll into view*).
+* `Arrow Right` — Dynamically expand the currently active branch.
+* `Arrow Left` — Collapse the active branch, or if it is already collapsed, instantly shift focus to its parent node.
+
+
 * **Advanced Subtree Control (Ctrl Shortcut):**
-    * *Standard Click:* Expands or collapses only the single, targeted parent node.
-    * *Ctrl + Click:* Recursively expands or collapses the **entire subtree**, including all nested deeply layered child branches at once.
-* **Text Selection Guard:** Clicking on the actual line text (label) does not trigger tree collapsing/expanding. Instead, it securely highlights the selected line and logs its internal database row ID into the browser developer console.
+* *Standard Click:* Expands or collapses only the directly targeted parent node.
+* *Ctrl + Click:* Recursively expands or collapses the **entire subtree along with all of its deeply nested branches**.
 
-## 🛠️ Architecture & Code Layout
 
-The component is entirely self-contained within a single HTML file, cleanly decoupled into three architectural layers:
+* **External API & Event Monitor (Callbacks):** The class exposes a public interface allowing the registration of external callbacks (`onNodeClick`, `onNodeHover`). This enables effortless data streaming from the selected node to external dashboards and event logs without modifying the component's core files.
+* **Minimalist Mode (`circle="off"`):** The component supports a dynamic visual toggle using the `circle` attribute. When `circle="off"` is set, the animated green interaction circles on hover are completely disabled in favor of elegant geometric icons, while strictly maintaining a scale lock (fixed 6px size) for the root node icon.
+* **Intelligent Icon Interface (CSS Pseudoelements):**
+* **Collapsed State:** Represented by a minimalist right-pointing triangle that is **hollow (white) inside** with a dark gray border.
+* **Expanded State:** Features a smooth 90° downward rotation animation accompanied by an automatic solid color fill.
+* **Root Exception:** The primary database node (ID: 0, `SELECT STATEMENT`) possesses a unique, static black square icon symbolizing the query's start/endpoint.
+
+
+
+## 🛠️ Architecture and Code Structure
+
+The component is bundled into a single, self-sufficient HTML file and is divided into three logical layers:
 
 ### 1. Structural Layer (HTML)
-Utilizes semantic HTML5 markup featuring `<ul class="json-tree">` as the primary wrapper, layout-friendly list elements `<li>`, and native browser interactive disclosures (`<details>` and `<summary>`), ensuring baseline accessibility.
+
+Utilizes semantic HTML5 tags: `<ul class="json-tree">` as the main container, nested list items `<li>`, and native `<details>` and `<summary>` control elements, ensuring native accessibility.
 
 ### 2. Presentation Layer (CSS3)
-* The `.json-tree` class acts as the centralized design-system hub, managing CSS custom properties (`--spacing`, `--radius`, `--accent`) for effortless theme branding and padding adjustment.
-* All UI state icons (triangles, squares, pluses, minuses) are injected as vector-based **inline SVG (Data URIs)** within `::before` pseudoelements. This eliminates the need for downloading bulky external icon fonts (e.g., FontAwesome).
 
-### 3. Logic Layer (JavaScript ES6)
-* `generateLargeSqlPlan(count)`: Randomly builds realistic SQL execution plan steps (`HASH JOIN`, `INDEX RANGE SCAN`, etc.), enforcing a strict binary hierarchy constraint.
-* `buildTreeStructure(rows)`: Transforms flat relational database parent-child rows `(id, parent_id)` into a deeply nested JSON graph object.
-* `renderTreeDOM(node)`: Recursively builds DOM fragments and injects them into the viewport.
-* `setupTreeEventListeners(treeContainer)`: The centralized event dispatcher. It actively checks for keyboard modifier states to toggle massive structural updates.
+* CSS Variables (`--spacing`, `--radius`, `--accent`) allow for instant branding and layout customization.
+* All icons (triangles, squares) are rendered as vector inline **SVG graphics (Data URI)** within `::before` pseudoelements.
+* Precise CSS cascades (including targeted selector specificity combinations with `!important`) ensure flawless icon proportions in `circle="off"` mode.
 
-## 🤝 Development & Acknowledgments
+### 3. Logic Layer (`JsonTree` Class & Runtime Scripts)
 
-This project was developed through an interactive AI pair-programming collaboration between the author and Gemini (Google AI). The core layout and CSS structural guides were inspired by the lightweight tree-view concept by Kate Morley (iamkate.com), which is dedicated to the public domain under CC0.
+* `class JsonTree`: The heart of the application. It accepts input configurations, maps flat relational collections, renders the DOM structure, and initializes mouse/keyboard event listeners.
+* `getAPI()`: The public interface of the class exposing control methods (e.g., `expandAll`, `collapseAll`, `goUp`, `goDown`, `goLeft`, `goRight`) and event registers.
+* `generateLargeSqlPlan(count)`: An external mock generator that spins up realistic SQL plan steps (`HASH JOIN`, `INDEX RANGE SCAN`, etc.), enforcing strict binary tree rules for demonstration purposes.
 
-## 💻 Getting Started
+## 🤝 About the Project and Collaboration
 
-1. Clone this repository or copy the code files locally.
+This project was developed using the *AI Pair Programming* methodology during an interactive collaboration with the Gemini model (Google AI). The binary tree architecture, advanced clean CSS icon logic, and keyboard shortcuts with modifiers were jointly iterated and refined throughout the developer conversation.
+
+The CSS structural blueprint and the concept of a clean tree without JavaScript were inspired by a minimalist project by Kate Morley ([iamkate.com](https://iamkate.com/code/tree-views/)), which was released into the public domain under the CC0 license.
+
+## 💻 How to Run
+
+1. Clone this repository or download the source code file.
 2. Open `index.html` directly in any modern web browser (Chrome, Firefox, Safari, Edge).
-3. Open your browser's Developer Tools Console (F12) to monitor database record ID outputs when interacting with plan labels.
+3. Click any element within the tree to activate it, and then use your **keyboard arrow keys** to experience the advanced navigation.
+4. Use the side panel to monitor the external Event Tracker powered by the callback API.
 
 ## 📝 License
 
-This project is licensed under the MIT License. Feel free to modify, distribute, and integrate this tool into your own database performance monitors or custom APM dashboards.
+This project is released under the MIT License. You are free to modify, distribute, and integrate it into your database monitoring and performance analysis systems.
