@@ -144,7 +144,7 @@
       border: solid var(--dark-grey);
       border-width: 0 0 2px 2px;
     }
-    
+     
     .json-tree li span.tree-node-text {
       display: inline-block;
       cursor: pointer;
@@ -169,7 +169,7 @@
       font-weight: bold !important;
       background-color: var(--grey) !important;
     }
-    
+     
     .json-tree summary {
       display: block;
       margin-left: calc(-2 * var(--spacing) + var(--radius) + 2px);
@@ -182,7 +182,7 @@
     .json-tree summary:focus {
       outline: none;
     }
-    
+     
     /* IKONY INTERAKTYWNE */
     .json-tree summary::before {
       content: '';
@@ -230,7 +230,10 @@
     [circle="off"] .json-tree details[open] > summary:hover::before {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath d='M8 5v14l11-7z' fill='%23555'/%3E%3C/svg%3E") !important;
     }
-    [circle="off"] .json-tree > li > details > summary:hover::before {
+    
+    /* ABSOLUTNA BLOKADA ZMIANY WIELKOŚCI KWADRATU W KORZENIU (NADPRISANIE !important) */
+    [circle="off"] #plan-container .json-tree > li > details > summary:hover::before,
+    [circle="off"] #plan-container .json-tree > li > details[open] > summary:hover::before {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Crect x='0' y='0' width='24' height='24' fill='%23333'/%3E%3C/svg%3E") !important;
       background-size: 6px no-repeat !important;
     }
@@ -328,9 +331,7 @@
           }
           if (clickedSpan) {
             if (clickedSpan.closest('summary')) e.preventDefault();
-            treeRoot.querySelectorAll('.tree-node-text').forEach(el => el.classList.remove('active-branch'));
-            clickedSpan.classList.add('active-branch'); this.#activeNodeId = clickedSpan.getAttribute('data-id');
-            if (this.#onClickCallback) this.#onClickCallback(this.#findNodeDataById(this.#activeNodeId), clickedSpan);
+            this.#activateNodeElement(clickedSpan);
           }
         });
         treeRoot.addEventListener('mouseover', (e) => {
@@ -341,13 +342,83 @@
           }
         });
       }
+      #activateNodeElement(spanEl) {
+        if (!spanEl) return;
+        this.#container.querySelectorAll('.tree-node-text').forEach(el => el.classList.remove('active-branch'));
+        spanEl.classList.add('active-branch');
+        this.#activeNodeId = spanEl.getAttribute('data-id');
+        if (this.#onClickCallback) {
+          this.#onClickCallback(this.#findNodeDataById(this.#activeNodeId), spanEl);
+        }
+        spanEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+      #getVisibleNodes() {
+        const nodes = [];
+        const allSpans = this.#container.querySelectorAll('.tree-node-text');
+        allSpans.forEach(span => {
+          const li = span.closest('li');
+          let parent = li.parentElement.closest('details');
+          let isVisible = true;
+          while (parent) {
+            if (!parent.open) {
+              isVisible = false;
+              break;
+            }
+            parent = parent.parentElement.closest('details');
+          }
+          if (isVisible) nodes.push(span);
+        });
+        return nodes;
+      }
       getAPI() {
         return {
           getActiveId: () => this.#activeNodeId,
           expandAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = true); },
           collapseAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = false); },
           onNodeClick: (cb) => { if (typeof cb === 'function') this.#onClickCallback = cb; },
-          onNodeHover: (cb) => { if (typeof cb === 'function') this.#onHoverCallback = cb; }
+          onNodeHover: (cb) => { if (typeof cb === 'function') this.#onHoverCallback = cb; },
+          goUp: () => {
+            const visible = this.#getVisibleNodes();
+            if (visible.length === 0) return;
+            const currentIdx = visible.findIndex(el => el.getAttribute('data-id') === this.#activeNodeId);
+            if (currentIdx > 0) {
+              this.#activateNodeElement(visible[currentIdx - 1]);
+            } else if (currentIdx === -1) {
+              this.#activateNodeElement(visible[0]);
+            }
+          },
+          goDown: () => {
+            const visible = this.#getVisibleNodes();
+            if (visible.length === 0) return;
+            const currentIdx = visible.findIndex(el => el.getAttribute('data-id') === this.#activeNodeId);
+            if (currentIdx === -1) {
+              this.#activateNodeElement(visible[0]);
+            } else if (currentIdx < visible.length - 1) {
+              this.#activateNodeElement(visible[currentIdx + 1]);
+            }
+          },
+          goRight: () => {
+            if (!this.#activeNodeId) return;
+            const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
+            if (!activeSpan) return;
+            const details = activeSpan.closest('details');
+            if (details && !details.open) details.open = true;
+          },
+          goLeft: () => {
+            if (!this.#activeNodeId) return;
+            const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
+            if (!activeSpan) return;
+            const details = activeSpan.closest('details');
+            if (details && details.open) {
+              details.open = false;
+            } else {
+              const parentDetails = activeSpan.closest('ul').closest('details');
+              if (parentDetails) {
+                const parentSpan = parentDetails.querySelector('.tree-node-text');
+                if (parentSpan) this.#activateNodeElement(parentSpan);
+              }
+            }
+          }
         };
       }
     }
@@ -407,6 +478,17 @@
         const container = document.getElementById('plan-container');
         const currentStatus = container.getAttribute('circle');
         container.setAttribute('circle', currentStatus === 'on' ? 'off' : 'on');
+      });
+
+      // Obsługa klawiszy strzałek dla nawigacji klawiszowej
+      window.addEventListener('keydown', (e) => {
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+          e.preventDefault();
+          if (e.key === "ArrowUp") treeAPI.goUp();
+          if (e.key === "ArrowDown") treeAPI.goDown();
+          if (e.key === "ArrowRight") treeAPI.goRight();
+          if (e.key === "ArrowLeft") treeAPI.goLeft();
+        }
       });
     });
   </script>
