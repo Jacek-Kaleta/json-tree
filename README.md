@@ -59,7 +59,7 @@ The class instance exposes a secure public facade, isolating internal variables 
 
 ---
 
-## 🔬 Implementation Example Description (`demo9.html`)
+## 🔬 Implementation Example Description 
 
 The `demo9.html` file serves as a comprehensive demonstration application, showcasing the deployment of the `JsonTree` class within database performance monitoring systems.
 
