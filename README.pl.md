@@ -58,7 +58,7 @@ Instancja klasy udostępnia bezpieczną fasadę publiczną, izolując wewnętrzn
 
 ---
 
-## 🔬 Opis Przykładu Implementacji (`demo9.html`)
+## 🔬 Opis Przykładu Implementacji
 
 Plik `demo9.html` stanowi kompletną aplikację demonstracyjną, pokazującą wdrożenie klasy `JsonTree` w systemach monitoringu wydajności baz danych. 
 
