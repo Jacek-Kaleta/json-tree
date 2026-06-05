@@ -87,7 +87,7 @@ The structural CSS scaffolding and the core concept of a clean tree layout witho
 
 ## 💻 How to Run the Project
 
-1. Clone this repository or download the `demo9.html` file.
+1. Clone this repository or download the `json-tree.html` file.
 2. Open the `demo9.html` file directly in any modern web browser (Chrome, Firefox, Safari, Edge) — the project does not require a local HTTP server to run.
 3. Click any element inside the tree structure to activate it, and then use the **arrow keys on your keyboard** to test the advanced navigation.
 4. Try out the search bar by typing strings with the `+` operator (e.g., `TABLE + FULL`), regular expressions (e.g., `/scan/i`), and switching between the different expansion modes (`lazy` / `isolate`).
