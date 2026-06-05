@@ -86,7 +86,7 @@ Szkielet strukturalny CSS oraz koncepcja czystego drzewa bez JavaScriptu został
 
 ## 💻 Jak Uruchomić Projekt
 
-1. Sklonuj to repozytorium lub pobierz plik `demo9.html`.
+1. Sklonuj to repozytorium lub pobierz plik `json-tree.html`.
 2. Otwórz plik `demo9.html` bezpośrednio w dowolnej nowoczesnej przeglądarce internetowej (Chrome, Firefox, Safari, Edge) — projekt nie wymaga lokalnego serwera HTTP.
 3. Kliknij dowolny element w strukturze drzewiastej, aby go uaktywnić, a następnie użyj **strzałek na klawiaturze**, aby przetestować zaawansowaną nawigację.
 4. Przetestuj wyszukiwarkę, wybierając różne tryby (`lazy` / `isolate`) lub wpisując filtry z operatorem `+` (np. `TABLE + FULL`) albo wyrażenia regularne (np. `/scan/i`).
