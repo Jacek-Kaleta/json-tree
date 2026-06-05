@@ -1034,6 +1034,15 @@
     }
 	</script>
   <script name="external-generator-and-runner">
+  
+    let seed = 123456;
+
+    Math.random = function () 
+    {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+
     function generateLargeSqlPlan(count) {
       const operations = ["HASH JOIN", "NESTED LOOPS", "MERGE JOIN", "TABLE ACCESS", "INDEX", "SORT", "FILTER", "VIEW"];
       const options = ["FULL", "RANGE SCAN", "UNIQUE SCAN", "JOIN FAST FULL SCAN", ""];
@@ -1067,7 +1076,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
       const planTree = new JsonTree({
-        data: generateLargeSqlPlan(40), 
+        data: generateLargeSqlPlan(1000), 
         targetElement: document.getElementById('plan-container'),
         formatter: sqlLabelFormatter,
         mapping: { id: 'nodeUID', parentId: 'parentUID' }
