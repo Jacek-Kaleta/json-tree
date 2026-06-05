@@ -1,10 +1,3 @@
-Oto zaktualizowana i przeorganizowana treść dokumentu **README.pl.md**.
-
-W nowej wersji uwzględniłem zaawansowane funkcjonalności wykryte bezpośrednio w pliku `demo9.html` (takie jak **kompleksowy podsystem wyszukiwania**, operator `+`, obsługa wyrażeń regularnych oraz dynamiczny, myszkowy **splitter paneli layoutu**). Zgodnie z Twoją prośbą, wyraźnie odseparowałem specyfikację techniczną samej klasy `JsonTree` od opisu jej wdrożenia w demonstracyjnej aplikacji.
-
----
-
-```markdown
 # Skalowalne Binarne Drzewo Planu Zapytania SQL (JsonTree)
 
 Język: [English (Angielski)](README.md) | **Polski**
