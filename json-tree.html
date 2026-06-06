@@ -178,6 +178,13 @@
       height: 10px;
       border-radius: 50%;
     }
+
+   .cost-square {
+     display: inline-block;
+     width: 10px;
+     height: 10px;
+     border-radius: 0; /* Brak zaokrąglenia = idealny kwadrat */
+   }
     .cost-low { background-color: #4caf50; }
     .cost-medium { background-color: #ff9800; }
     .cost-high { background-color: #f44336; }
@@ -344,6 +351,8 @@
     class JsonTree {
       /** @type {Array<Object>} Płaska tablica obiektów wejściowych (surowe wiersze danych) */
       #rows;
+      /** @type {Object|null} Zagnieżdżony obiekt głównego węzła zawierający pełną hierarchię i dzieci */
+      #nestedRoot = null;
       /** @type {HTMLElement} Kontener DOM, w którym zostanie wyrenderowane drzewo */
       #container;
       /** @type {function(Object): string} Funkcja formatująca dane obiektu węzła do postaci ciągu znaków HTML */
@@ -358,6 +367,7 @@
       #onClickCallback = null;
       /** @type {function(Object, HTMLElement): void | null} Callback wywoływany po najechaniu myszą na węzeł */
       #onHoverCallback = null;
+	  
 
       /** @type {Object<string, string>|null} Słownik mapujący klucz ID na zindeksowaną treść tekstową na potrzeby szybkiego wyszukiwania */
       #searchIndex = null;
@@ -392,15 +402,16 @@
       }
 
       /**
-       * Inicjalizuje proces budowania struktury i renderowania drzewa w DOM. Przypina listenery zdarzeń.
-       * @private
-       */
+      * Inicjalizuje proces budowania struktury i renderowania drzewa w DOM. Przypina listenery zdarzeń.
+      * @private
+      */
       #init() {
         if (!this.#container) return;
-        const nestedData = this.#buildTreeStructure(this.#rows);
+        // ZAPISUJEMY zagnieżdżoną strukturę do pola klasy
+        this.#nestedRoot = this.#buildTreeStructure(this.#rows);
         const ulRoot = document.createElement('ul');
         ulRoot.className = 'json-tree';
-        if (nestedData) ulRoot.appendChild(this.#renderTreeDOM(nestedData));
+        if (this.#nestedRoot) ulRoot.appendChild(this.#renderTreeDOM(this.#nestedRoot));
         this.#container.appendChild(ulRoot);
         this.#setupEventListeners(ulRoot);
       }
@@ -431,6 +442,7 @@
        * @private
        */
       #renderTreeDOM(node) {
+	    console.log(node);
         const li = document.createElement('li');
         const labelHTML = this.#labelFormatter(node); 
         const nodeId = node[this.#idKey];
@@ -467,6 +479,44 @@
        */
       #findNodeDataById(id) { 
         return this.#rows.find(row => row[this.#idKey] == id) || null; 
+      }
+	  
+	  /**
+       * Rekurencyjnie przeszukuje zagnieżdżone drzewo w poszukiwaniu węzła o podanym ID.
+       * Zwraca nowy, bezpieczny obiekt węzła zawierający wyłącznie jego BEZPOŚREDNIE podwęzły (dzieci),
+       * odcinając głębsze struktury (wnuki, prawnuki itd.), co zapobiega błędom w analizie planu.
+       * @param {Object} currentNode - Węzeł, od którego zaczyna się przeszukiwanie.
+       * @param {string|number} id - Identyfikator poszukiwanego węzła.
+       * @returns {Object|null} Obiekt węzła z odciętą głęboką strukturą lub null.
+       * @private
+       */
+      #findNestedNodeById(currentNode, id) {
+        if (!currentNode) return null;
+        
+        // 1. Jeśli znaleźliśmy szukany węzeł
+        if (String(currentNode[this.#idKey]) === String(id)) {
+          // Tworzymy płytki klon obiektu (kopiujemy właściwości operacji, id, elapsed_ms itp.)
+          const nodeClone = { ...currentNode, children: [] };
+          
+          // 2. Mapujemy tylko bezpośrednie dzieci, czyszcząc im tablicę children
+          if (currentNode.children && currentNode.children.length > 0) {
+            nodeClone.children = currentNode.children.map(child => {
+              // Tworzymy klon dziecka, ale bezwzględnie odcinamy jego potomstwo (wnuki)
+              return { ...child, children: [] };
+            });
+          }
+          
+          return nodeClone;
+        }
+        
+        // 3. Jeśli to nie ten węzeł, szukamy głębiej w oryginalnej strukturze
+        if (currentNode.children && currentNode.children.length > 0) {
+          for (const child of currentNode.children) {
+            const found = this.#findNestedNodeById(child, id);
+            if (found) return found;
+          }
+        }
+        return null;
       }
 	  
 	  /**
@@ -524,16 +574,23 @@
           }
         });
         
-        treeRoot.addEventListener('mouseover', (e) => {
+       treeRoot.addEventListener('mouseover', (e) => {
           const hoveredSpan = e.target.closest('.tree-node-text');
           if (hoveredSpan && this.#onHoverCallback) {
             const nodeId = hoveredSpan.getAttribute('data-id');
-            this.#onHoverCallback(this.#findNodeDataById(nodeId), hoveredSpan);
+            
+            // 1. Pobieramy płaskie dane
+            const rawNodeData = this.#findNodeDataById(nodeId);
+            // 2. Pobieramy oczyszczone dane zagnieżdżone (tylko bezpośrednie dzieci)
+            const subNodeData = this.#findNestedNodeById(this.#nestedRoot, nodeId);
+            
+            // 3. Przekazujemy: (nodeData, subNodeData, elementDOM)
+            this.#onHoverCallback(rawNodeData, subNodeData, hoveredSpan);
           }
         });
       }
 
-      /**
+       /**
        * Nadaje elementowi wizualnemu status aktywnego (wybranego) elementu w drzewie i odpala powiązany callback.
        * Synchronizuje style oraz zachowuje ostatni indeks wyszukiwania przy nawigacji po elementach przydymionych.
        * @param {HTMLElement} spanEl - Element `<span>` reprezentujący tekst węzła w DOM.
@@ -542,7 +599,7 @@
       #activateNodeElement(spanEl) {
         if (!spanEl) return;
 
-        // --- POPRAWKA STANÓW WYSZUKIWANIA DLA POPRZEDNIEGO ELEMENTU ---
+        // 1. USTALENIE STANU DLA POPRZEDNIO AKTYWNEGO ELEMENTU
         const prevActiveSpan = this.#activeNodeId 
           ? this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`) 
           : null;
@@ -555,6 +612,7 @@
             const isPrevMatched = this.#matchedNodeIds.includes(Number(prevIdAttr)) || this.#matchedNodeIds.includes(String(prevIdAttr));
             
             if (isPrevMatched) {
+              prevActiveSpan.classList.remove(this.#activeSearchClasses.selected);
               prevActiveSpan.classList.add(this.#activeSearchClasses.matched);
             } else {
               prevActiveSpan.classList.add(this.#activeSearchClasses.dimmed);
@@ -564,24 +622,47 @@
           this.#container.querySelectorAll('.tree-node-text').forEach(el => el.classList.remove('active-branch'));
         }
 
-        // --- AKTYWACJA NOWEGO ELEMENTU ---
+        // 2. AKTYWACJA NOWEGO ELEMENTU
         this.#activeNodeId = spanEl.getAttribute('data-id');
-        spanEl.classList.add('active-branch');
-        spanEl.classList.remove(this.#activeSearchClasses.dimmed, this.#activeSearchClasses.matched);
+        
+        // Czyścimy starą klasę wybranego podświetlenia wyszukiwarki globalnie w drzewie,
+        // ponieważ za chwilę nadamy ją poprawnie nowemu aktywnemu elementowi (jeśli pasuje)
+        if (this.#matchedNodeIds.length > 0) {
+          this.#container.querySelectorAll(`.${this.#activeSearchClasses.selected}`).forEach(el => {
+            el.classList.remove(this.#activeSearchClasses.selected);
+            el.classList.add(this.#activeSearchClasses.matched);
+          });
+        }
 
-        // --- POPRAWIONA SYNCHRONIZACJA INDEKSU ---
+        // Dodajemy klasę aktywnej gałęzi (szare tło)
+        spanEl.classList.add('active-branch');
+
+        // 3. SYNCHRONIZACJA WIZUALNA Z SYSTEMEM WYSZUKIWANIA
         if (this.#matchedNodeIds.length > 0) {
           const matchedIdx = this.#matchedNodeIds.findIndex(id => String(id) === String(this.#activeNodeId));
           
-          // Aktualizujemy indeks TYLKO wtedy, gdy nowy element faktycznie jest na liście trafień.
-          // Jeśli kliknęliśmy przydymiony - zachowujemy poprzednią wartość (nie nadpisujemy jej przez -1).
           if (matchedIdx !== -1) {
+            // Jeśli element znajduje się na liście trafień, nadajemy mu stan SELECTED
             this.#currentMatchIndex = matchedIdx;
+            spanEl.classList.remove(this.#activeSearchClasses.dimmed, this.#activeSearchClasses.matched);
+            spanEl.classList.add(this.#activeSearchClasses.selected);
+          } else {
+            // Jeśli zeszliśmy strzałką na element przydymiony (spoza wyszukiwania)
+            spanEl.classList.remove(this.#activeSearchClasses.dimmed, this.#activeSearchClasses.matched, this.#activeSearchClasses.selected);
           }
+        } else {
+          // Gdy nie ma aktywnego wyszukiwania
+          spanEl.classList.remove(this.#activeSearchClasses.dimmed, this.#activeSearchClasses.matched, this.#activeSearchClasses.selected);
         }
 
+      
+        // 4. WYWOŁANIE CALLBACKÓW I SCROLL
         if (this.#onClickCallback) {
-          this.#onClickCallback(this.#findNodeDataById(this.#activeNodeId), spanEl);
+          const rawNodeData = this.#findNodeDataById(this.#activeNodeId);
+          const subNodeData = this.#findNestedNodeById(this.#nestedRoot, this.#activeNodeId);
+          
+          // Wywołanie z trzema parametrami: (nodeData, subNodeData, element)
+          this.#onClickCallback(rawNodeData, subNodeData, spanEl);
         }
         
         spanEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -779,64 +860,72 @@
       #navigateToMatch(newIndex) {
         if (this.#matchedNodeIds.length === 0) return;
 
-        const prevIndex = this.#currentMatchIndex;
+        // 1. CZYSZCZENIE STARYCH ZAZNACZEŃ (Globalny reset poprzednich stanów wyszukiwania i kliknięcia)
+        const allSpans = this.#container.querySelectorAll('.tree-node-text');
+        allSpans.forEach(span => {
+          // Czyścimy starą klasę selekcji wyszukiwania
+          if (span.classList.contains(this.#activeSearchClasses.selected)) {
+            span.classList.remove(this.#activeSearchClasses.selected);
+            
+            const spanId = span.getAttribute('data-id');
+            const isSpanMatched = this.#matchedNodeIds.includes(Number(spanId)) || this.#matchedNodeIds.includes(String(spanId));
+            
+            if (isSpanMatched) {
+              span.classList.add(this.#activeSearchClasses.matched);
+            } else {
+              span.classList.add(this.#activeSearchClasses.dimmed);
+            }
+          }
+          // Czyścimy też klasę zwykłego kliknięcia/nawigacji strzałkami, aby nie mieć dwóch podświetleń na raz
+          span.classList.remove('active-branch');
+        });
+
+        // 2. AKTUALIZACJA INDEKSÓW WYSZUKIWANIA
         this.#currentMatchIndex = newIndex;
-
-        const prevId = prevIndex !== -1 ? this.#matchedNodeIds[prevIndex] : null;
         const nextId = this.#matchedNodeIds[this.#currentMatchIndex];
-
-        const prevSpan = prevId ? this.#container.querySelector(`.tree-node-text[data-id="${prevId}"]`) : null;
         const nextSpan = this.#container.querySelector(`.tree-node-text[data-id="${nextId}"]`);
 
         if (!nextSpan) return;
 
-        if (prevSpan) {
-          prevSpan.classList.remove(this.#activeSearchClasses.selected);
-          
-          // POPRAWKA UX: Kiedy opuszczamy poprzedni element, sprawdzamy czy był na liście trafień.
-          // Jeśli NIE był bezpośrednim trafieniem (czyli był tylko rodzicem/częścią struktury), przywracamy mu przygaszenie.
-          const prevIdAttr = prevSpan.getAttribute('data-id');
-          const isPrevMatched = this.#matchedNodeIds.includes(Number(prevIdAttr)) || this.#matchedNodeIds.includes(String(prevIdAttr));
-          
-          if (isPrevMatched) {
-            prevSpan.classList.add(this.#activeSearchClasses.matched);
-          } else {
-            prevSpan.classList.add(this.#activeSearchClasses.dimmed);
-          }
-        }
+        // --- KLUCZOWA POPRAWKA SYNCHRONIZACJI ---
+        // Ustawiamy kursor zwykłej nawigacji na nowo wybrany element z wyszukiwarki.
+        // Dzięki temu goUp/goDown (strzałki) będą wiedziały, skąd mają zacząć!
+        this.#activeNodeId = String(nextId);
+        nextSpan.classList.add('active-branch'); 
+        // ----------------------------------------
 
-        // POPRAWKA UX: Dla nowego podświetlanego elementu nadajemy klasę selected 
-        // oraz BEZWARUNKOWO usuwamy klasę dimmed, aby był idealnie widoczny!
+        // 3. PODŚWIETLENIE ELEMENTU JAKO WYNIK WYSZUKIWANIA
         nextSpan.classList.remove(this.#activeSearchClasses.matched, this.#activeSearchClasses.dimmed);
         nextSpan.classList.add(this.#activeSearchClasses.selected);
 
-        // POPRAWKA: Znajdujemy dane obiektu, aby precyzyjnie odczytać jego logicznego rodzica
+        // 4. ROZWIJANIE RODZICÓW W GÓRĘ HIERARCHII
         const currentNodeData = this.#findNodeDataById(nextId);
         if (currentNodeData) {
           let parentVal = currentNodeData[this.#parentKey];
           
-          // Wędrujemy w górę struktury danych po identyfikatorach rodziców
           while (parentVal !== null && parentVal !== undefined) {
-            // Szukamy elementu <details> przypisanego do rodzica
             const parentSpan = this.#container.querySelector(`.tree-node-text[data-id="${parentVal}"]`);
             if (parentSpan) {
               const parentDetails = parentSpan.closest('details');
               if (parentDetails) {
-                parentDetails.open = true; // Otwieramy tylko faktycznego rodzica
+                parentDetails.open = true;
               }
             }
             
-            // Przechodzimy poziom wyżej w hierarchii danych
             const parentRow = this.#rows.find(r => r[this.#idKey] == parentVal);
             parentVal = parentRow ? parentRow[this.#parentKey] : null;
           }
         }
 
-        // Płynne przewinięcie do widoku
+        // Płynne przewinięcie elementu do widoku ekranu
         nextSpan.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 
+        // Odpalenie zewnętrznego callbacku (zaktualizuje dane w panelu bocznym)
         if (this.#onClickCallback) {
-          this.#onClickCallback(currentNodeData, nextSpan);
+          const subNodeData = this.#findNestedNodeById(this.#nestedRoot, nextId);
+          
+          // Wywołanie z trzema parametrami: (nodeData, subNodeData, element)
+          this.#onClickCallback(currentNodeData, subNodeData, nextSpan);
         }
       }
 	  
@@ -877,164 +966,187 @@
       }
 
       /**
-       * Generuje i zwraca bezpieczny obiekt API fasady publicznej, odizolowany od wewnętrznych zmiennych instancyjnych klasy.
-       * @returns {Object} Publicznie dostępne metody sterowania i subskrypcji zdarzeń drzewa.
+       * Aktualizuje wyłącznie wygląd (HTML) węzłów w DOM na podstawie przekazanej funkcji formatującej.
+       * Nie wpływa na indeks wyszukiwania ani na strukturę drzewa.
+       * @param {function(Object): string} newFormatter - Nowa funkcja zwracająca kod HTML dla węzła.
        */
-      getAPI() {
-        return {
-          /** @returns {string|number|null} Zwraca ID zaznaczonego elementu. */
-          getActiveId: () => this.#activeNodeId,
-          /** Rozwija globalnie wszystkie gałęzie `<details>` w drzewie. */
-          expandAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = true); },
-          /** Zwija globalnie wszystkie gałęzie `<details>` w drzewie. */
-          collapseAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = false); },
-          /** Rejestruje callback dla zdarzenia kliknięcia węzła. @param {function(Object, HTMLElement):void} cb */
-          onNodeClick: (cb) => { if (typeof cb === 'function') this.#onClickCallback = cb; },
-          /** Rejestruje callback dla zdarzenia najechania myszką na tekst węzła. @param {function(Object, HTMLElement):void} cb */
-          onNodeHover: (cb) => { if (typeof cb === 'function') this.#onHoverCallback = cb; },
-          /** Przesuwa podświetlenie na sąsiadujący, widoczny wyżej element (Nawigacja strzałką w Górę). */
-          goUp: () => {
-            const visible = this.#getVisibleNodes();
-            if (visible.length === 0) return;
-            const currentIdx = visible.findIndex(el => el.getAttribute('data-id') === this.#activeNodeId);
-            if (currentIdx > 0) this.#activateNodeElement(visible[currentIdx - 1]);
-          },
-          /** Przesuwa podświetlenie na sąsiadujący, widoczny niżej element (Nawigacja strzałką w Dół). */
-          goDown: () => {
-            const visible = this.#getVisibleNodes();
-            if (visible.length === 0) return;
-            const currentIdx = visible.findIndex(el => el.getAttribute('data-id') === this.#activeNodeId);
-            if (currentIdx === -1) this.#activateNodeElement(visible[0]);
-            else if (currentIdx < visible.length - 1) this.#activateNodeElement(visible[currentIdx + 1]);
-          },
-          /** Otwiera aktualnie podświetloną gałąź podrzędną (Nawigacja strzałką w Prawo). */
-          goRight: () => {
-            if (!this.#activeNodeId) return;
-            const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
-            if (!activeSpan) return;
-            const details = activeSpan.closest('details');
-            if (details && !details.open) details.open = true;
-          },
-          /** Zwija podświetloną gałąź, a jeśli jest zwinięta, przechodzi na jej rodzica (Nawigacja strzałką w Lewo). */
-          goLeft: () => {
-            if (!this.#activeNodeId) return;
-            const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
-            if (!activeSpan) return;
-            const details = activeSpan.closest('details');
-            if (details && details.open) {
-              details.open = false;
-            } else {
-              const parentDetails = activeSpan.closest('ul').closest('details');
-              if (parentDetails) {
-                const parentSpan = parentDetails.querySelector('.tree-node-text');
-                if (parentSpan) this.#activateNodeElement(parentSpan);
-              }
-            }
-          },
-          indexTree: (indexFn) => this.indexTree(indexFn),
-          search: (criterion, options) => this.search(criterion, options),
-          nextMatch: () => this.nextMatch(),
-          prevMatch: () => this.prevMatch(),
-          firstMatch: () => this.firstMatch(),
-          lastMatch: () => this.lastMatch(),         
-		 /** @returns {{matchedIds: Array<string|number>, currentIndex: number, totalMatches: number}} Zwraca klon aktualnego stanu podsystemu wyszukiwawczego. */
-          getSearchState: () => ({
-            matchedIds: [...this.#matchedNodeIds],
-            currentIndex: this.#currentMatchIndex,
-            totalMatches: this.#matchedNodeIds.length
-          })
-        };
+      updateVisuals(newFormatter) {
+        if (typeof newFormatter !== 'function') return;
+      
+        // Pobieramy wszystkie spany reprezentujące węzły wewnątrz naszego kontenera
+        const allSpans = this.#container.querySelectorAll('.tree-node-text');
+      
+        allSpans.forEach(span => {
+          const nodeId = span.getAttribute('data-id');
+          const nodeData = this.#findNodeDataById(nodeId);
+      
+          if (nodeData) {
+            // Wywołujemy nowy format i podmieniamy zawartość
+            span.innerHTML = newFormatter(nodeData);
+          }
+        });
       }
-    }
-  </script>
-
-  
-	<h2>Plan Wykonania SQL</h2>
-	<p class="subtitle">Pełny kod z zaimplementowanym i opisanym standardem JSDoc.</p>
-  
-	<div class="layout">
-		<div class="tree-side">
-			<div class="sticky-controls">
-				<div class="search-panel">
-					<input type="text" id="search-input" placeholder="Wyszukaj operację (np. NESTED LOOPS...)" />
-					<select id="expand-mode-select">
-						<option value="lazy">Tryb: lazy</option>
-						<option value="isolate">Tryb: isolate</option>
-						<option value="all">Tryb: all</option>
-					</select>
-					<span id="search-counter">0 / 0</span>
-					<button id="btn-first" title="Pierwsze dopasowanie">|&lt;</button>
-					<button id="btn-prev" title="Poprzednie dopasowanie">&lt;</button>
-					<button id="btn-next" title="Następne dopasowanie">&gt;</button>
-					<button id="btn-last" title="Ostatnie dopasowanie">&gt;|</button>
-				</div>
-				<div class="controls">
-					<button id="btn-expand">Rozwiń wszystko</button>
-					<button id="btn-collapse">Zwiń wszystko</button>
-					<button id="btn-toggle-circle">Przełącz kółka (on/off)</button>
-				</div>
-			</div>
-			<div id="plan-container" circle="on"></div>
-		</div>
-
-		<div class="resizer" id="drag-bar"></div>
-		<div class="info-side">
-			<h3>Zewnętrzny Monitor Zdarzeń</h3>
-			<p style="font-size:13px; color:#666;">Interakcja z callbackami drzewa.</p>
-
-			<h4 style="margin-top:15px; font-weight:400;">Ostatnie Kliknięcie (onNodeClick):</h4>
-			<div id="click-info" class="info-box">Brak danych</div>
-
-			<h4 style="margin-top:15px; font-weight:400;">Aktualny Hover (onNodeHover):</h4>
-			<div id="hover-info" class="info-box">Brak danych</div>
-		</div>
-	</div>
-	<script name="side-resizer">
-	// --- LOGIKA ZMIANY SZEROKOŚCI PANELÓW MYSZKĄ ---
-    const resizer = document.getElementById('drag-bar');
-    const leftPanel = document.querySelector('.tree-side');
-    const layoutContainer = document.querySelector('.layout');
-
-    if (resizer && leftPanel && layoutContainer) {
-      let isDragging = false;
-
-      resizer.addEventListener('mousedown', function (e) {
-        isDragging = true;
-        resizer.classList.add('dragging');
-        // Zapobiegamy zaznaczaniu tekstu w drzewie podczas przeciągania
-        document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
-      });
-
-      document.addEventListener('mousemove', function (e) {
-        if (!isDragging) return;
-
-        // Pobieramy pozycję i geometrię kontenera głównego
-        const containerRect = layoutContainer.getBoundingClientRect();
+            /**
+             * Generuje i zwraca bezpieczny obiekt API fasady publicznej, odizolowany od wewnętrznych zmiennych instancyjnych klasy.
+             * @returns {Object} Publicznie dostępne metody sterowania i subskrypcji zdarzeń drzewa.
+             */
+            getAPI() {
+              return {
+                /** @returns {string|number|null} Zwraca ID zaznaczonego elementu. */
+                getActiveId: () => this.#activeNodeId,
+                /** Rozwija globalnie wszystkie gałęzie `<details>` w drzewie. */
+                expandAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = true); },
+                /** Zwija globalnie wszystkie gałęzie `<details>` w drzewie. */
+                collapseAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = false); },
+                /** Rejestruje callback dla zdarzenia kliknięcia węzła. @param {function(Object, HTMLElement):void} cb */
+                onNodeSelect: (cb) => { if (typeof cb === 'function') this.#onClickCallback = cb; },
+                /** Rejestruje callback dla zdarzenia najechania myszką na tekst węzła. @param {function(Object, Object, HTMLElement):void} cb */
+                onNodeHover: (cb) => { if (typeof cb === 'function') this.#onHoverCallback = cb; },
+                /** Przesuwa podświetlenie na sąsiadujący, widoczny wyżej element (Nawigacja strzałką w Górę). */
+                goUp: () => {
+                  const visible = this.#getVisibleNodes();
+                  if (visible.length === 0) return;
+                  const currentIdx = visible.findIndex(el => el.getAttribute('data-id') === this.#activeNodeId);
+                  if (currentIdx > 0) this.#activateNodeElement(visible[currentIdx - 1]);
+                },
+                /** Przesuwa podświetlenie na sąsiadujący, widoczny niżej element (Nawigacja strzałką w Dół). */
+                goDown: () => {
+                  const visible = this.#getVisibleNodes();
+                  if (visible.length === 0) return;
+                  const currentIdx = visible.findIndex(el => el.getAttribute('data-id') === this.#activeNodeId);
+                  if (currentIdx === -1) this.#activateNodeElement(visible[0]);
+                  else if (currentIdx < visible.length - 1) this.#activateNodeElement(visible[currentIdx + 1]);
+                },
+                /** Otwiera aktualnie podświetloną gałąź podrzędną (Nawigacja strzałką w Prawo). */
+                goRight: () => {
+                  if (!this.#activeNodeId) return;
+                  const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
+                  if (!activeSpan) return;
+                  const details = activeSpan.closest('details');
+                  if (details && !details.open) details.open = true;
+                },
+                /** Zwija podświetloną gałąź, a jeśli jest zwinięta, przechodzi na jej rodzica (Nawigacja strzałką w Lewo). */
+                goLeft: () => {
+                  if (!this.#activeNodeId) return;
+                  const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
+                  if (!activeSpan) return;
+                  const details = activeSpan.closest('details');
+                  if (details && details.open) {
+                    details.open = false;
+                  } else {
+                    const parentDetails = activeSpan.closest('ul').closest('details');
+                    if (parentDetails) {
+                      const parentSpan = parentDetails.querySelector('.tree-node-text');
+                      if (parentSpan) this.#activateNodeElement(parentSpan);
+                    }
+                  }
+                },
+                indexTree: (indexFn) => this.indexTree(indexFn),
+                search: (criterion, options) => this.search(criterion, options),
+                nextMatch: () => this.nextMatch(),
+                prevMatch: () => this.prevMatch(),
+                firstMatch: () => this.firstMatch(),
+                lastMatch: () => this.lastMatch(),         
+                /** @returns {{matchedIds: Array<string|number>, currentIndex: number, totalMatches: number}} Zwraca klon aktualnego stanu podsystemu wyszukiwawczego. */
+                getSearchState: () => ({
+                  matchedIds: [...this.#matchedNodeIds],
+                  currentIndex: this.#currentMatchIndex,
+                  totalMatches: this.#matchedNodeIds.length
+                }),
+                updateVisuals: (newFormatter) => this.updateVisuals(newFormatter)
+              };
+            }
+          }
+        </script>
+      
         
-        // Obliczamy nową szerokość lewego panelu w pikselach
-        let newWidth = e.clientX - containerRect.left;
+      	<h2>Plan Wykonania SQL</h2>
+      	<p class="subtitle">Pełny kod z zaimplementowanym i opisanym standardem JSDoc.</p>
+        
+      	<div class="layout">
+      		<div class="tree-side">
+      			<div class="sticky-controls">
+      				<div class="search-panel">
+      					<input type="text" id="search-input" placeholder="Wyszukaj operację (np. NESTED LOOPS...)" />
+      					<select id="expand-mode-select">
+      						<option value="lazy">Tryb: lazy</option>
+      						<option value="isolate">Tryb: isolate</option>
+      						<option value="all">Tryb: all</option>
+      					</select>
+      					<span id="search-counter">0 / 0</span>
+      					<button id="btn-first" title="Pierwsze dopasowanie">|&lt;</button>
+      					<button id="btn-prev" title="Poprzednie dopasowanie">&lt;</button>
+      					<button id="btn-next" title="Następne dopasowanie">&gt;</button>
+      					<button id="btn-last" title="Ostatnie dopasowanie">&gt;|</button>
+      				</div>
+      				<div class="controls">
+      					<button id="btn-expand">Rozwiń wszystko</button>
+      					<button id="btn-collapse">Zwiń wszystko</button>
+      					<button id="btn-toggle-circle">Przełącz kółka (on/off)</button>
+      					<button id="btn-new-formatter">Nowy formater</button>
+      				</div>
+      			</div>
+      			<div id="plan-container" circle="on"></div>
+      		</div>
+      
+      		<div class="resizer" id="drag-bar"></div>
+      		<div class="info-side">
+      			<h3>Zewnętrzny Monitor Zdarzeń</h3>
+      			<p style="font-size:13px; color:#666;">Interakcja z callbackami drzewa.</p>
+      
+      			<h4 style="margin-top:15px; font-weight:400;">Ostatnie Kliknięcie (onNodeSelect):</h4>
+      			<div id="click-info" class="info-box">Brak danych</div>
+      
+      			<h4 style="margin-top:15px; font-weight:400;">Aktualny Hover (onNodeHover):</h4>
+      			<div id="hover-info" class="info-box">Brak danych</div>
+      		</div>
+      	</div>
+      	<script name="side-resizer">
+      	// --- LOGIKA ZMIANY SZEROKOŚCI PANELÓW MYSZKĄ ---
+          const resizer = document.getElementById('drag-bar');
+          const leftPanel = document.querySelector('.tree-side');
+          const layoutContainer = document.querySelector('.layout');
+      
+          if (resizer && leftPanel && layoutContainer) {
+            let isDragging = false;
+      
+            resizer.addEventListener('mousedown', function (e) {
+              isDragging = true;
+              resizer.classList.add('dragging');
+              // Zapobiegamy zaznaczaniu tekstu w drzewie podczas przeciągania
+              document.body.style.cursor = 'col-resize';
+              document.body.style.userSelect = 'none';
+            });
+      
+            document.addEventListener('mousemove', function (e) {
+              if (!isDragging) return;
+      
+              // Pobieramy pozycję i geometrię kontenera głównego
+              const containerRect = layoutContainer.getBoundingClientRect();
+              
+              // Obliczamy nową szerokość lewego panelu w pikselach
+              let newWidth = e.clientX - containerRect.left;
+      
+              // Ograniczenia minimalne i maksymalne (np. min 250px, max szerokość kontenera - 250px)
+              if (newWidth < 250) newWidth = 250;
+              if (newWidth > containerRect.width - 250) newWidth = containerRect.width - 250;
+      
+              // Ustawiamy nową szerokość w pikselach
+              leftPanel.style.width = `${newWidth}px`;
+            });
+      
+            document.addEventListener('mouseup', function () {
+              if (isDragging) {
+                isDragging = false;
+                resizer.classList.remove('dragging');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+              }
+            });
+          }
+      	</script>
+        <script name="external-generator-and-runner">
 
-        // Ograniczenia minimalne i maksymalne (np. min 250px, max szerokość kontenera - 250px)
-        if (newWidth < 250) newWidth = 250;
-        if (newWidth > containerRect.width - 250) newWidth = containerRect.width - 250;
-
-        // Ustawiamy nową szerokość w pikselach
-        leftPanel.style.width = `${newWidth}px`;
-      });
-
-      document.addEventListener('mouseup', function () {
-        if (isDragging) {
-          isDragging = false;
-          resizer.classList.remove('dragging');
-          document.body.style.cursor = '';
-          document.body.style.userSelect = '';
-        }
-      });
-    }
-	</script>
-  <script name="external-generator-and-runner">
-  
     let seed = 123456;
 
     Math.random = function () 
@@ -1043,144 +1155,286 @@
       return seed / 233280;
     };
 
-    function generateLargeSqlPlan(count) {
-      const operations = ["HASH JOIN", "NESTED LOOPS", "MERGE JOIN", "TABLE ACCESS", "INDEX", "SORT", "FILTER", "VIEW"];
+		  
+    /**
+     * Generuje głęboką, wielopoziomową strukturę planu SQL o poprawnej logice bazodanowej.
+     * Każdy węzeł generuje określoną liczbę dzieci w zależności od swojego typu:
+     * - COUNT, SORT, FILTER, VIEW itp. -> ZAWSZE dokładnie 1 dziecko (które może mieć własne dzieci).
+     * - UNION ALL -> ZAWSZE losowo od 2 do 5 dzieci (które mogą mieć własne dzieci).
+     * - HASH JOIN, NESTED LOOPS, MERGE JOIN -> ZAWSZE dokładnie 2 dzieci.
+     * - TABLE ACCESS, INDEX -> ZAWSZE 0 dzieci (kończą strukturę gałęzi).
+     */
+    function generateLargeSqlPlan(targetCount) {
+      const singleChildOps = ["COUNT", "SORT", "FILTER", "VIEW", "PARTITION RANGE"];
+      const binaryOps = ["HASH JOIN", "NESTED LOOPS", "MERGE JOIN"];
+      const leafOps = ["TABLE ACCESS", "INDEX"];
+      
       const options = ["FULL", "RANGE SCAN", "UNIQUE SCAN", "JOIN FAST FULL SCAN", ""];
       const tables = ["ORDERS", "CUSTOMERS", "INVOICES", "PRODUCTS"];
-      const rows = []; const childrenCountMap = { 0: 0 };
-      rows.push({ nodeUID: 0, parentUID: null, operation: "SELECT STATEMENT", options: "", card: 50000, elapsed_ms: 1420 });
-      for (let i = 1; i < count; i++) {
-        let parentId = null;
-        for (let j = 0; j < i; j++) { if (childrenCountMap[j] < 2) { parentId = j; break; } }
-        childrenCountMap[parentId]++; childrenCountMap[i] = 0;
-        const op = operations[Math.floor(Math.random() * operations.length)];
-        const opt = (op === "TABLE ACCESS" || op === "INDEX") ? options[Math.floor(Math.random() * options.length)] : "";
-        const tableName = (op === "TABLE ACCESS" || op === "INDEX") ? tables[Math.floor(Math.random() * tables.length)] : null;
-        rows.push({ nodeUID: i, parentUID: parentId, operation: op, options: opt, object_name: tableName, card: Math.floor(Math.random() * 1000) + 1, elapsed_ms: Math.floor(Math.random() * 50) });
-      }
-      return rows;
-    }
-
-    function sqlLabelFormatter(node) {
-      const objectInfo = node.object_name ? ` [${node.object_name}]` : '';
-      const optionsInfo = node.options ? ` (${node.options})` : '';
-      let dotClass = node.card > 800 ? 'cost-high' : (node.card > 400 ? 'cost-medium' : 'cost-low');
-      return `
-        <span class="node-badge">
-          <i class="cost-dot ${dotClass}"></i>
-          <strong>${node.operation}</strong>${optionsInfo}${objectInfo}
-          <span class="node-meta">(Rows: ${node.card}, Time: ${node.elapsed_ms}ms)</span>
-        </span>
-      `;
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-      const planTree = new JsonTree({
-        data: generateLargeSqlPlan(1000), 
-        targetElement: document.getElementById('plan-container'),
-        formatter: sqlLabelFormatter,
-        mapping: { id: 'nodeUID', parentId: 'parentUID' }
-      });
-      const treeAPI = planTree.getAPI();
-
-      treeAPI.indexTree((node) => {
-        return `${node.operation} ${node.options || ''} ${node.object_name || ''}`;
-      });
-
-      treeAPI.onNodeClick((nodeData, element) => {
-        document.getElementById('click-info').innerHTML = JSON.stringify({ 
-          nodeUID: nodeData.nodeUID, 
-          operacja: nodeData.operation, 
-          tekst: element.textContent.trim().replace(/\s+/g, ' ') 
-        }, null, 2);
-
-        // --- NOWOŚĆ: Aktualizacja licznika na górze strony po kliknięciu lub zmianie strzałką ---
-        updateCounter(); 
-      });
-      treeAPI.onNodeHover((nodeData) => {
-        document.getElementById('hover-info').innerHTML = `NodeUID: ${nodeData.nodeUID}\nOperacja: ${nodeData.operation}`;
-      });
-      document.getElementById('btn-expand').addEventListener('click', () => treeAPI.expandAll());
-      document.getElementById('btn-collapse').addEventListener('click', () => treeAPI.collapseAll());
       
-      document.getElementById('btn-toggle-circle').addEventListener('click', () => {
-        const container = document.getElementById('plan-container');
-        const currentStatus = container.getAttribute('circle');
-        container.setAttribute('circle', currentStatus === 'on' ? 'off' : 'on');
+      const rows = [];
+      // Kolejka przechowuje obiekty: { id: numer_wezla, remainingChildren: ile_jeszcze_dzieci_musi_dostac }
+      const queue = [];
+      
+      // 1. Dodajemy główny węzeł startowy (SELECT STATEMENT przyjmuje zawsze 1 główne poddrzewo)
+      rows.push({ 
+        nodeUID: 0, 
+        parentUID: null, 
+        operation: "SELECT STATEMENT", 
+        options: "", 
+        card: 50000, 
+        elapsed_ms: 1420 
       });
-
-      const searchInput = document.getElementById('search-input');
-      const expandModeSelect = document.getElementById('expand-mode-select');
-      const searchCounter = document.getElementById('search-counter');
-
-      function updateCounter() {
-        const state = treeAPI.getSearchState();
-        if (state.totalMatches === 0) {
-            searchCounter.textContent = "0 / 0";
-        } else {
-            // Jeśli indeks to -1 (świeże wyszukiwanie), traktujemy to wizualnie jako pozycję 1
-            const displayIndex = state.currentIndex === -1 ? 1 : state.currentIndex + 1;
-            searchCounter.textContent = `${displayIndex} / ${state.totalMatches}`;
-        }
-      }
-
-      function executeSearch() {
-        const val = searchInput.value.trim();
-        let criterion = val;
+      queue.push({ id: 0, remainingChildren: 1 });
+      
+      let nextId = 1;
+      
+      while (nextId < targetCount && queue.length > 0) {
+        const parent = queue[0];
+        const parentId = parent.id;
         
-        if (val.startsWith('/') && val.lastIndexOf('/') > 0) {
-            try {
-                const lastSlash = val.lastIndexOf('/');
-                const pattern = val.substring(1, lastSlash);
-                const flags = val.substring(lastSlash + 1);
-                criterion = new RegExp(pattern, flags);
-            } catch(e) {
-                criterion = val;
-            }
-        }
-
-        treeAPI.search(criterion, {
-            expandMode: expandModeSelect.value
-        });
-        updateCounter();
-      }
-
-      searchInput.addEventListener('input', executeSearch);
-      expandModeSelect.addEventListener('change', executeSearch);
-
-      // Zaktualizowane listenery przycisków - wywołania bez parametrów:
-      document.getElementById('btn-next').addEventListener('click', () => {
-        treeAPI.nextMatch();
-        updateCounter();
-      });
-
-      document.getElementById('btn-prev').addEventListener('click', () => {
-        treeAPI.prevMatch();
-        updateCounter();
-      });
-
-      document.getElementById('btn-first').addEventListener('click', () => {
-        treeAPI.firstMatch();
-        updateCounter();
-      });
-
-      document.getElementById('btn-last').addEventListener('click', () => {
-        treeAPI.lastMatch();
-        updateCounter();
-      });
-
-      window.addEventListener('keydown', (e) => {
-        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-          if (document.activeElement !== searchInput) {
-            e.preventDefault();
-            if (e.key === "ArrowUp") treeAPI.goUp();
-            if (e.key === "ArrowDown") treeAPI.goDown();
-            if (e.key === "ArrowRight") treeAPI.goRight();
-            if (e.key === "ArrowLeft") treeAPI.goLeft();
+        let op = "";
+        let opt = "";
+        let tableName = null;
+        let expectedChildren = 0;
+        
+        // Bezpiecznik: Jeśli zbliżamy się do limitu targetCount, zmuszamy do generowania liści (0 dzieci)
+        if (targetCount - nextId <= queue.length) {
+          op = leafOps[Math.floor(Math.random() * leafOps.length)];
+          expectedChildren = 0;
+        } else {
+          // Losujemy kategorię operacji dla nowego węzła
+          const rand = Math.random();
+          if (rand < 0.25) {
+            // Reguła: Operacje jedno-węzłowe -> dokładnie 1 dziecko
+            op = singleChildOps[Math.floor(Math.random() * singleChildOps.length)];
+            expectedChildren = 1;
+          } else if (rand < 0.40) {
+            // Reguła: UNION ALL -> od 2 do 5 dzieci
+            op = "UNION ALL";
+            expectedChildren = Math.floor(Math.random() * 4) + 2; // 2, 3, 4 lub 5
+          } else if (rand < 0.75) {
+            // Reguła: Operacje binarne -> dokładnie 2 dzieci
+            op = binaryOps[Math.floor(Math.random() * binaryOps.length)];
+            expectedChildren = 2;
+          } else {
+            // Reguła: Liście (operacje końcowe) -> 0 dzieci
+            op = leafOps[Math.floor(Math.random() * leafOps.length)];
+            expectedChildren = 0;
           }
         }
-      });
-    });
-  </script>
-</body>
-</html>
+        
+        // Dodatkowe parametry dla liści (nazwa tabeli i opcja skanowania)
+        if (op === "TABLE ACCESS" || op === "INDEX") {
+          opt = options[Math.floor(Math.random() * options.length)];
+          tableName = tables[Math.floor(Math.random() * tables.length)];
+        }
+        
+        // Dodajemy nowy węzeł do płaskiej struktury
+        rows.push({
+          nodeUID: nextId,
+          parentUID: parentId,
+          operation: op,
+          options: opt,
+          object_name: tableName,
+          card: Math.floor(Math.random() * 1000) + 1,
+          elapsed_ms: Math.floor(Math.random() * 50)
+        });
+        
+        // Jeśli nowo utworzony węzeł sam oczekuje na dzieci, dodajemy go na koniec kolejki
+        if (expectedChildren > 0) {
+          queue.push({ id: nextId, remainingChildren: expectedChildren });
+        }
+        
+        nextId++;
+        
+        // Zmniejszamy licznik oczekiwanych dzieci dla aktualnego rodzica
+        parent.remainingChildren--;
+        
+        // Jeśli aktualny rodzic otrzymał już wszystkie swoje dzieci, usuwamy go z początku kolejki
+        if (parent.remainingChildren === 0) {
+          queue.shift();
+        }
+      }
+      
+      // Awaryjne dopełnienie struktury, gdyby pętla główna zakończyła się przed osiągnięciem targetCount
+      while (nextId < targetCount) {
+        rows.push({
+          nodeUID: nextId,
+          parentUID: rows[rows.length - 1].parentUID,
+          operation: "TABLE ACCESS",
+          options: "FULL",
+          object_name: "DUMMY_FALLBACK",
+          card: 1,
+          elapsed_ms: 1
+        });
+        nextId++;
+      }
+      
+      return rows;
+    }
+      
+          function sqlLabelFormatter(node) {
+            const objectInfo = node.object_name ? ` [${node.object_name}]` : '';
+            const optionsInfo = node.options ? ` (${node.options})` : '';
+            let dotClass = node.card > 800 ? 'cost-high' : (node.card > 400 ? 'cost-medium' : 'cost-low');
+            return `
+              <span class="node-badge">
+                <i class="cost-dot ${dotClass}"></i>
+                <strong>${node.operation}</strong>${optionsInfo}${objectInfo}
+                <span class="node-meta">(Rows: ${node.card}, Time: ${node.elapsed_ms}ms)</span>
+              </span>
+            `;
+          }
+          // 1. Definiujemy nowy sposób wyświetlania
+         function sqlLabelFormatterExtra(node) {
+           const objectInfo = node.object_name ? ` [${node.object_name}]` : '';
+           const optionsInfo = node.options ? ` (${node.options})` : '';
+           
+           // LOGIKA ZMIENIONA: Teraz liczymy "koszt" od zmiennej elapsed_ms (czasu)
+           let dotClass = node.elapsed_ms > 80 ? 'cost-high' : (node.elapsed_ms > 40 ? 'cost-medium' : 'cost-low');
+           
+           return `
+             <span class="node-badge">
+               <i class="cost-square ${dotClass}"></i>
+               <strong>${node.operation}</strong>${optionsInfo}${objectInfo}
+               <span class="node-meta">(Rows: ${node.card}, Time: ${node.elapsed_ms}ms)</span>
+             </span>
+           `;
+         }
+   
+	   document.addEventListener('DOMContentLoaded', () => {
+		 const planTree = new JsonTree({
+		   data: generateLargeSqlPlan(2000), 
+		   targetElement: document.getElementById('plan-container'),
+		   formatter: sqlLabelFormatter,
+		   mapping: { id: 'nodeUID', parentId: 'parentUID' }
+		 });
+		 const treeAPI = planTree.getAPI();
+   
+		 treeAPI.indexTree((node) => {
+		   return `${node.operation} ${node.options || ''} ${node.object_name || ''}`;
+		 });
+   
+		 treeAPI.onNodeSelect((nodeData, subNodeData, element) => {
+		   // subNodeData zawiera teraz obiekt { nodeUID, operation, ..., children: [...] }
+		   console.log("Dane węzła i jego dzieci:", subNodeData);
+		   
+		   // Przykład analizy podwęzłów: obliczanie ile dzieci ma ten węzeł bezpośrednio
+		   const childrenCount = subNodeData && subNodeData.children ? subNodeData.children.length : 0;
+
+		   document.getElementById('click-info').innerHTML = JSON.stringify({ 
+			 nodeUID: nodeData.nodeUID, 
+			 operacja: nodeData.operation, 
+			 liczba_dzieci: childrenCount,
+			 tekst: element.textContent.trim().replace(/\s+/g, ' ') 
+		   }, null, 2);
+   
+		   updateCounter(); 
+		 });
+		 
+		treeAPI.onNodeHover((nodeData, subNodeData, element) => {
+		   // Liczymy rekurencyjnie lub sprawdzamy bezpośrednie dzieci
+		   
+		     
+		   console.log("Dane węzła i jego dzieci:", subNodeData);
+		   const totalChildren = subNodeData && subNodeData.children ? subNodeData.children.length : 0;
+		   
+		   document.getElementById('hover-info').innerHTML = 
+		     `NodeUID: ${nodeData.nodeUID}\n` +
+		     `Operacja: ${nodeData.operation}\n` +
+		     `Bezpośrednie podwęzły: ${totalChildren}`;
+		 });
+		 
+		 document.getElementById('btn-expand').addEventListener('click', () => treeAPI.expandAll());
+		 document.getElementById('btn-collapse').addEventListener('click', () => treeAPI.collapseAll());
+		 
+		 document.getElementById('btn-toggle-circle').addEventListener('click', () => {
+		   const container = document.getElementById('plan-container');
+		   const currentStatus = container.getAttribute('circle');
+		   container.setAttribute('circle', currentStatus === 'on' ? 'off' : 'on');
+		 });
+   
+		 const searchInput = document.getElementById('search-input');
+		 const expandModeSelect = document.getElementById('expand-mode-select');
+		 const searchCounter = document.getElementById('search-counter');
+   
+		 function updateCounter() {
+		   const state = treeAPI.getSearchState();
+		   if (state.totalMatches === 0) {
+			   searchCounter.textContent = "0 / 0";
+		   } else {
+			   // Jeśli indeks to -1 (świeże wyszukiwanie), traktujemy to wizualnie jako pozycję 1
+			   const displayIndex = state.currentIndex === -1 ? 1 : state.currentIndex + 1;
+			   searchCounter.textContent = `${displayIndex} / ${state.totalMatches}`;
+		   }
+		 }
+   
+		 function executeSearch() {
+		   const val = searchInput.value.trim();
+		   let criterion = val;
+		   
+		   if (val.startsWith('/') && val.lastIndexOf('/') > 0) {
+			   try {
+				   const lastSlash = val.lastIndexOf('/');
+				   const pattern = val.substring(1, lastSlash);
+				   const flags = val.substring(lastSlash + 1);
+				   criterion = new RegExp(pattern, flags);
+			   } catch(e) {
+				   criterion = val;
+			   }
+		   }
+   
+		   treeAPI.search(criterion, {
+			   expandMode: expandModeSelect.value
+		   });
+		   updateCounter();
+		 }
+   
+		 searchInput.addEventListener('input', executeSearch);
+		 expandModeSelect.addEventListener('change', executeSearch);
+   
+		 // Zaktualizowane listenery przycisków - wywołania bez parametrów:
+		 document.getElementById('btn-next').addEventListener('click', () => {
+		   treeAPI.nextMatch();
+		   updateCounter();
+		 });
+   
+		 document.getElementById('btn-prev').addEventListener('click', () => {
+		   treeAPI.prevMatch();
+		   updateCounter();
+		 });
+   
+		 document.getElementById('btn-first').addEventListener('click', () => {
+		   treeAPI.firstMatch();
+		   updateCounter();
+		 });
+   
+		 document.getElementById('btn-last').addEventListener('click', () => {
+		   treeAPI.lastMatch();
+		   updateCounter();
+		 });
+		
+		let b = true;
+		document.getElementById('btn-new-formatter').addEventListener('click', () => {
+
+		  if (b) treeAPI.updateVisuals(sqlLabelFormatterExtra);
+		  else treeAPI.updateVisuals(sqlLabelFormatter); 
+		  b = ! b;
+		});
+   
+		 window.addEventListener('keydown', (e) => {
+		   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+			 if (document.activeElement !== searchInput) {
+			   e.preventDefault();
+			   if (e.key === "ArrowUp") treeAPI.goUp();
+			   if (e.key === "ArrowDown") treeAPI.goDown();
+			   if (e.key === "ArrowRight") treeAPI.goRight();
+			   if (e.key === "ArrowLeft") treeAPI.goLeft();
+			 }
+		   }
+		 });
+	   });
+	 </script>
+   </body>
+   </html>
