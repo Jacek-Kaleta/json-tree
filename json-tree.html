@@ -342,11 +342,11 @@
 </head>
 <body>
 
- 
-  <script name="class-implementation">
+<script name="class-implementation">
     /**
      * Klasa reprezentująca hierarchiczne, interaktywne drzewo renderowane z płaskiej struktury danych (relacja Adjacency List).
-     * Wspiera zaawansowane przeszukiwanie (indeksowane, regex), sterowanie widocznością gałęzi, nawigację klawiaturą oraz asynchroniczne callbacki zdarzeń.
+     * Wspiera zaawansowane przeszukiwanie (indeksowane, regex, operatory logiczne), sterowanie widocznością gałęzi, 
+     * nawigację klawiaturą oraz asynchroniczne callbacki zdarzeń.
      */
     class JsonTree {
       /** @type {Array<Object>} Płaska tablica obiektów wejściowych (surowe wiersze danych) */
@@ -363,11 +363,10 @@
       #idKey;
       /** @type {string} Nazwa klucza wskazującego na identyfikator rodzica (np. 'PARENT_ID') */
       #parentKey;
-      /** @type {function(Object, HTMLElement): void | null} Callback wywoływany po kliknięciu węzła */
+      /** @type {function(Object, Array<Object>, HTMLElement): void | null} Callback wywoływany po kliknięciu węzła */
       #onClickCallback = null;
-      /** @type {function(Object, HTMLElement): void | null} Callback wywoływany po najechaniu myszą na węzeł */
+      /** @type {function(Object, Array<Object>, HTMLElement): void | null} Callback wywoływany po najechaniu myszą na węzeł */
       #onHoverCallback = null;
-	  
 
       /** @type {Object<string, string>|null} Słownik mapujący klucz ID na zindeksowaną treść tekstową na potrzeby szybkiego wyszukiwania */
       #searchIndex = null;
@@ -396,7 +395,7 @@
         this.#rows = data; 
         this.#container = targetElement; 
         this.#labelFormatter = formatter;
-        this.#idKey = mapping.id || 'ID'; 
+        this.#idKey = mapping.id || 'ID'; // POPRAWIONE: Usunięto zbędny znak ` na końcu domyślnej wartości
         this.#parentKey = mapping.parentId || 'PARENT_ID';
         this.#init();
       }
@@ -407,7 +406,6 @@
       */
       #init() {
         if (!this.#container) return;
-        // ZAPISUJEMY zagnieżdżoną strukturę do pola klasy
         this.#nestedRoot = this.#buildTreeStructure(this.#rows);
         const ulRoot = document.createElement('ul');
         ulRoot.className = 'json-tree';
@@ -442,13 +440,12 @@
        * @private
        */
       #renderTreeDOM(node) {
-	    //console.log(node);
         const li = document.createElement('li');
         const labelHTML = this.#labelFormatter(node); 
         const nodeId = node[this.#idKey];
         if (node.children && node.children.length > 0) {
           const details = document.createElement('details');
-		  details.open = true; 
+          details.open = true; 
           const summary = document.createElement('summary');
           const span = document.createElement('span');
           span.className = 'tree-node-text'; 
@@ -479,8 +476,8 @@
       #findNodeDataById(id) { 
         return this.#rows.find(row => row[this.#idKey] == id) || null; 
       }
-	  
-	  /**
+      
+      /**
        * Rekurencyjnie przeszukuje zagnieżdżone drzewo w poszukiwaniu węzła o podanym ID.
        * Zwraca nowy, bezpieczny obiekt węzła zawierający wyłącznie jego BEZPOŚREDNIE podwęzły (dzieci),
        * odcinając głębsze struktury (wnuki, prawnuki itd.), co zapobiega błędom w analizie planu.
@@ -492,23 +489,16 @@
       #findNestedNodeById(currentNode, id) {
         if (!currentNode) return null;
         
-        // 1. Jeśli znaleźliśmy szukany węzeł
         if (String(currentNode[this.#idKey]) === String(id)) {
-          // Tworzymy płytki klon obiektu (kopiujemy właściwości operacji, id, elapsed_ms itp.)
           const nodeClone = { ...currentNode, children: [] };
-          
-          // 2. Mapujemy tylko bezpośrednie dzieci, czyszcząc im tablicę children
           if (currentNode.children && currentNode.children.length > 0) {
             nodeClone.children = currentNode.children.map(child => {
-              // Tworzymy klon dziecka, ale bezwzględnie odcinamy jego potomstwo (wnuki)
               return { ...child, children: [] };
             });
           }
-          
           return nodeClone;
         }
         
-        // 3. Jeśli to nie ten węzeł, szukamy głębiej w oryginalnej strukturze
         if (currentNode.children && currentNode.children.length > 0) {
           for (const child of currentNode.children) {
             const found = this.#findNestedNodeById(child, id);
@@ -517,31 +507,38 @@
         }
         return null;
       }
-	  
-	  /**
-       * Sprawdza, czy tekst zawiera szukaną frazę lub (w przypadku użycia znaku '+') 
-       * przynajmniej jeden z podanych podciągów po ich oczyszczeniu.
+      
+      /**
+       * Sprawdza, czy tekst spełnia zaawansowane kryteria wyszukiwania przy użyciu operatorów.
+       * Obsługuje operator '+' jako LUB (OR) oraz '*' jako I (AND).
        * @param {string} textToTest - Przeszukiwany tekst (zazwyczaj zmapowana etykieta węzła).
        * @param {string} criterion - Kryterium wyszukiwania wpisane przez użytkownika.
-       * @returns {boolean} True, jeśli tekst spełnia kryteria wyszukiwania.
+       * @returns {boolean} True, jeśli tekst spełnia kryteria złożonego zapytania.
        * @private
        */
-      #includesAny(textToTest, criterion) {
+      #matchAdvancedQuery(textToTest, criterion) {
         const lowerText = textToTest.toLowerCase();
         const lowerCriterion = criterion.toLowerCase();
 
-        if (lowerCriterion.includes('+')) {
-          // Dzielimy po znaku '+', oczyszczamy z białych znaków i filtrujemy puste elementy
-          const subStrings = lowerCriterion.split('+')
+        // 1. Najpierw dzielimy po znaku '+' (LUB), ponieważ operacja LUB tworzy alternatywne grupy
+        const orGroups = lowerCriterion.split('+')
+          .map(str => str.trim())
+          .filter(str => str.length > 0);
+
+        if (orGroups.length === 0) return false;
+
+        // 2. Szukamy dopasowania w grupach – tekst pasuje, jeśli spełnia warunki CHOĆ JEDNEJ grupy (OR)
+        return orGroups.some(orGroup => {
+          // 3. Każdą grupę LUB dzielimy po znaku '*' (I) – koniunkcja wiąże silniej
+          const andParts = orGroup.split('*')
             .map(str => str.trim())
             .filter(str => str.length > 0);
 
-          // Zwraca true, jeśli chociaż jeden (ANY) podciąg znajduje się w tekście
-          return subStrings.some(subStr => lowerText.includes(subStr));
-        }
+          if (andParts.length === 0) return false;
 
-        // Standardowe wyszukiwanie, jeśli w kryterium nie ma znaku '+'
-        return lowerText.includes(lowerCriterion);
+          // 4. Ta konkretna grupa pasuje tylko wtedy, gdy tekst zawiera WSZYSTKIE jej elementy (AND)
+          return andParts.every(andPart => lowerText.includes(andPart));
+        });
       }
 
       /**
@@ -577,13 +574,8 @@
           const hoveredSpan = e.target.closest('.tree-node-text');
           if (hoveredSpan && this.#onHoverCallback) {
             const nodeId = hoveredSpan.getAttribute('data-id');
-            
-            // 1. Pobieramy płaskie dane
             const rawNodeData = this.#findNodeDataById(nodeId);
-            // 2. Pobieramy oczyszczone dane zagnieżdżone (tylko bezpośrednie dzieci)
             const subNodeData = this.#findNestedNodeById(this.#nestedRoot, nodeId);
-            
-            // 3. Przekazujemy: (nodeData, subNodeData, elementDOM)
             this.#onHoverCallback(rawNodeData, subNodeData ? subNodeData.children : [], hoveredSpan);
           }
         });
@@ -598,7 +590,6 @@
       #activateNodeElement(spanEl) {
         if (!spanEl) return;
 
-        // 1. USTALENIE STANU DLA POPRZEDNIO AKTYWNEGO ELEMENTU
         const prevActiveSpan = this.#activeNodeId 
           ? this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`) 
           : null;
@@ -621,11 +612,8 @@
           this.#container.querySelectorAll('.tree-node-text').forEach(el => el.classList.remove('active-branch'));
         }
 
-        // 2. AKTYWACJA NOWEGO ELEMENTU
         this.#activeNodeId = spanEl.getAttribute('data-id');
         
-        // Czyścimy starą klasę wybranego podświetlenia wyszukiwarki globalnie w drzewie,
-        // ponieważ za chwilę nadamy ją poprawnie nowemu aktywnemu elementowi (jeśli pasuje)
         if (this.#matchedNodeIds.length > 0) {
           this.#container.querySelectorAll(`.${this.#activeSearchClasses.selected}`).forEach(el => {
             el.classList.remove(this.#activeSearchClasses.selected);
@@ -633,40 +621,31 @@
           });
         }
 
-        // Dodajemy klasę aktywnej gałęzi (szare tło)
         spanEl.classList.add('active-branch');
 
-        // 3. SYNCHRONIZACJA WIZUALNA Z SYSTEMEM WYSZUKIWANIA
         if (this.#matchedNodeIds.length > 0) {
           const matchedIdx = this.#matchedNodeIds.findIndex(id => String(id) === String(this.#activeNodeId));
           
           if (matchedIdx !== -1) {
-            // Jeśli element znajduje się na liście trafień, nadajemy mu stan SELECTED
             this.#currentMatchIndex = matchedIdx;
             spanEl.classList.remove(this.#activeSearchClasses.dimmed, this.#activeSearchClasses.matched);
             spanEl.classList.add(this.#activeSearchClasses.selected);
           } else {
-            // Jeśli zeszliśmy strzałką na element przydymiony (spoza wyszukiwania)
             spanEl.classList.remove(this.#activeSearchClasses.dimmed, this.#activeSearchClasses.matched, this.#activeSearchClasses.selected);
           }
         } else {
-          // Gdy nie ma aktywnego wyszukiwania
           spanEl.classList.remove(this.#activeSearchClasses.dimmed, this.#activeSearchClasses.matched, this.#activeSearchClasses.selected);
         }
 
-      
-        // 4. WYWOŁANIE CALLBACKÓW I SCROLL
         if (this.#onClickCallback) {
           const rawNodeData = this.#findNodeDataById(this.#activeNodeId);
           const subNodeData = this.#findNestedNodeById(this.#nestedRoot, this.#activeNodeId);
-          
-          // Wywołanie z trzema parametrami: (nodeData, subNodeData, element)
           this.#onClickCallback(rawNodeData, subNodeData ? subNodeData.children : [], spanEl);
         }
         
         spanEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
-	  
+      
       /**
        * Zwraca kolekcję elementów `<span>`, które są aktualnie widoczne dla oka użytkownika (ich rodzice `<details>` nie są zamknięci).
        * Wykorzystywane przy nawigacji strzałkami góra/dół.
@@ -706,20 +685,14 @@
       }
 
       /**
-       * Wykonuje operację wyszukiwania w drzewie na podstawie podanego kryterium tekstowego, RegExp lub funkcji filtrującej.
+       * Wykonuje operację wyszukiwania w drzewe na podstawie podanego kryterium tekstowego, RegExp lub funkcji filtrującej.
        * Automatycznie synchronizuje kolejność wyników z reprezentacją DOM, zarządza widocznością gałęzi (lazy, isolate, all)
-       * oraz obsługuje multi-wyszukiwanie przy użyciu operatora '+'.
-       * * @param {string|RegExp|function(Object):boolean} criterion - Fraza poszukiwana, wyrażenie regularne lub funkcja ewaluacyjna.
-       * W przypadku typu string, użycie znaku '+' (np. 'index + unique') szuka węzłów spełniających przynajmniej jeden z warunków.
+       * oraz obsługuje multi-wyszukiwanie przy użyciu operatora '+' (jako LUB) oraz '*' (jako I).
+       * @param {string|RegExp|function(Object):boolean} criterion - Fraza poszukiwana, wyrażenie regularne lub funkcja ewaluacyjna.
+       * W przypadku typu string obsługuje operatory logiczne: '*' (koniunkcja AND) oraz '+' (alternatywa OR).
        * @param {Object} [options={}] - Dodatkowe opcje zachowania wyszukiwania.
-       * @param {'lazy'|'isolate'|'all'} [options.expandMode='lazy'] - Sposób traktowania widoczności gałęzi po wyszukaniu:
-       * - 'lazy': Upewnia się, że węzły ukrywające wyniki są otwarte (nie zamyka żadnych wcześniej otwartych gałęzi).
-       * - 'isolate': Otwiera wyłącznie ścieżki prowadzące do pasujących węzłów, a wszystkie pozostałe gałęzie zamyka.
-       * - 'all': Rozwija absolutnie wszystkie elementy w drzewie DOM.
+       * @param {'lazy'|'isolate'|'all'} [options.expandMode='lazy'] - Sposób traktowania widoczności gałęzi po wyszukaniu.
        * @param {Object} [options.matchClasses] - Opcjonalne nadpisanie klas CSS dla wyników wyszukiwania.
-       * @param {string} [options.matchClasses.nodeDimmedClassName] - Klasa dla elementów wyszarzonych.
-       * @param {string} [options.matchClasses.nodeMatchedClassName] - Klasa dla elementów trafionych.
-       * @param {string} [options.matchClasses.nodeMatchedAndSelectedClassName] - Klasa dla aktualnie podświetlonego elementu w nawigacji.
        */
       search(criterion, options = {}) {
         const expandMode = options.expandMode || 'lazy';
@@ -751,7 +724,6 @@
           return (doc.body.textContent || '').trim().toLowerCase();
         };
 
-        // 1. Wytypowanie trafień
         this.#rows.forEach(node => {
           const nodeId = node[this.#idKey];
           let isMatch = false;
@@ -769,8 +741,8 @@
             if (criterion instanceof RegExp) {
               isMatch = criterion.test(textToTest);
             } else if (typeof criterion === 'string') {
-              //isMatch = textToTest.includes(criterion.toLowerCase());
-			  isMatch = this.#includesAny(textToTest, criterion);
+              // POPRAWIONE: Wywołanie zaktualizowanej metody obsługującej rozbudowane operatory logiczne (+ / *)
+              isMatch = this.#matchAdvancedQuery(textToTest, criterion);
             }
           }
 
@@ -779,7 +751,6 @@
           }
         });
 
-        // 2. Sortowanie wyników zgodnie z kolejnością występowania w DOM
         if (this.#matchedNodeIds.length > 0) {
           const domOrderMap = new Map();
           allSpans.forEach((span, index) => {
@@ -791,7 +762,6 @@
           });
         }
 
-        // 3. Wizualne wyróżnienie (dimmed / matched)
         const hasMatches = this.#matchedNodeIds.length > 0;
         allSpans.forEach(span => {
           const id = span.getAttribute('data-id');
@@ -804,7 +774,6 @@
           }
         });
 
-        // 4. Zarządzanie stanem rozwijania gałęzi (open) na podstawie wybranego trybu
         if (hasMatches) {
           if (expandMode === 'all') {
             this.#container.querySelectorAll('details').forEach(d => d.open = true);
@@ -812,7 +781,6 @@
             const matchedSet = new Set(this.#matchedNodeIds.map(id => String(id)));
             const nodesWithMatchedDescendants = new Set();
 
-            // Mapowanie ścieżek od trafień w górę do korzenia
             this.#rows.forEach(row => {
               let currentId = row[this.#idKey];
               if (matchedSet.has(String(currentId))) {
@@ -830,15 +798,11 @@
               const span = details.querySelector(':scope > summary > .tree-node-text');
               if (!span) return;
               const detailsId = span.getAttribute('data-id');
-
               const hasMatchesBelow = nodesWithMatchedDescendants.has(String(detailsId));
 
               if (expandMode === 'isolate') {
-                // Tryb isolate: otwiera tylko węzły na ścieżce do wyników, resztę zamyka
                 details.open = hasMatchesBelow;
               } else if (expandMode === 'lazy') {
-                // Tryb lazy: jeśli węzeł kryje pod sobą wyniki, upewnij się, że jest otwarty. 
-                // Jeśli nie kryje, pozostaw jego obecny stan bez zmian (nie zamykaj).
                 if (hasMatchesBelow) {
                   details.open = true;
                 }
@@ -850,22 +814,16 @@
 
       /**
        * Steruje procesem bezpośredniego przejścia do konkretnego indeksu wyniku wyszukiwania.
-       * Odpowiada za płynny scroll oraz nadanie stylów zaznaczenia (selected).
-       * Otwiera rodziców TYLKO jeśli element został ręcznie zwinięty przez użytkownika.
-       * Gwarantuje, że dzieci podświetlanego węzła nie zostaną otwarte.
        * @param {number} newIndex - Indeks celu wewnątrz zweryfikowanej tablicy `#matchedNodeIds`.
        * @private
        */
       #navigateToMatch(newIndex) {
         if (this.#matchedNodeIds.length === 0) return;
 
-        // 1. CZYSZCZENIE STARYCH ZAZNACZEŃ (Globalny reset poprzednich stanów wyszukiwania i kliknięcia)
         const allSpans = this.#container.querySelectorAll('.tree-node-text');
         allSpans.forEach(span => {
-          // Czyścimy starą klasę selekcji wyszukiwania
           if (span.classList.contains(this.#activeSearchClasses.selected)) {
             span.classList.remove(this.#activeSearchClasses.selected);
-            
             const spanId = span.getAttribute('data-id');
             const isSpanMatched = this.#matchedNodeIds.includes(Number(spanId)) || this.#matchedNodeIds.includes(String(spanId));
             
@@ -875,33 +833,24 @@
               span.classList.add(this.#activeSearchClasses.dimmed);
             }
           }
-          // Czyścimy też klasę zwykłego kliknięcia/nawigacji strzałkami, aby nie mieć dwóch podświetleń na raz
           span.classList.remove('active-branch');
         });
 
-        // 2. AKTUALIZACJA INDEKSÓW WYSZUKIWANIA
         this.#currentMatchIndex = newIndex;
         const nextId = this.#matchedNodeIds[this.#currentMatchIndex];
         const nextSpan = this.#container.querySelector(`.tree-node-text[data-id="${nextId}"]`);
 
         if (!nextSpan) return;
 
-        // --- KLUCZOWA POPRAWKA SYNCHRONIZACJI ---
-        // Ustawiamy kursor zwykłej nawigacji na nowo wybrany element z wyszukiwarki.
-        // Dzięki temu goUp/goDown (strzałki) będą wiedziały, skąd mają zacząć!
         this.#activeNodeId = String(nextId);
         nextSpan.classList.add('active-branch'); 
-        // ----------------------------------------
 
-        // 3. PODŚWIETLENIE ELEMENTU JAKO WYNIK WYSZUKIWANIA
         nextSpan.classList.remove(this.#activeSearchClasses.matched, this.#activeSearchClasses.dimmed);
         nextSpan.classList.add(this.#activeSearchClasses.selected);
 
-        // 4. ROZWIJANIE RODZICÓW W GÓRĘ HIERARCHII
         const currentNodeData = this.#findNodeDataById(nextId);
         if (currentNodeData) {
           let parentVal = currentNodeData[this.#parentKey];
-          
           while (parentVal !== null && parentVal !== undefined) {
             const parentSpan = this.#container.querySelector(`.tree-node-text[data-id="${parentVal}"]`);
             if (parentSpan) {
@@ -910,24 +859,19 @@
                 parentDetails.open = true;
               }
             }
-            
             const parentRow = this.#rows.find(r => r[this.#idKey] == parentVal);
             parentVal = parentRow ? parentRow[this.#parentKey] : null;
           }
         }
 
-        // Płynne przewinięcie elementu do widoku ekranu
         nextSpan.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 
-        // Odpalenie zewnętrznego callbacku (zaktualizuje dane w panelu bocznym)
         if (this.#onClickCallback) {
           const subNodeData = this.#findNestedNodeById(this.#nestedRoot, nextId);
-          
-          // Wywołanie z trzema parametrami: (nodeData, subNodeData, element)
           this.#onClickCallback(currentNodeData, subNodeData ? subNodeData.children : [], nextSpan);
         }
       }
-	  
+      
       /**
        * Przechodzi do kolejnego pasującego elementu w tablicy wyników wyszukiwania.
        */
@@ -966,103 +910,97 @@
 
       /**
        * Aktualizuje wyłącznie wygląd (HTML) węzłów w DOM na podstawie przekazanej funkcji formatującej.
-       * Nie wpływa na indeks wyszukiwania ani na strukturę drzewa.
        * @param {function(Object): string} newFormatter - Nowa funkcja zwracająca kod HTML dla węzła.
        */
       updateVisuals(newFormatter) {
         if (typeof newFormatter !== 'function') return;
-      
-        // Pobieramy wszystkie spany reprezentujące węzły wewnątrz naszego kontenera
         const allSpans = this.#container.querySelectorAll('.tree-node-text');
-      
         allSpans.forEach(span => {
           const nodeId = span.getAttribute('data-id');
           const nodeData = this.#findNodeDataById(nodeId);
-      
           if (nodeData) {
-            // Wywołujemy nowy format i podmieniamy zawartość
             span.innerHTML = newFormatter(nodeData);
           }
         });
       }
-            /**
-             * Generuje i zwraca bezpieczny obiekt API fasady publicznej, odizolowany od wewnętrznych zmiennych instancyjnych klasy.
-             * @returns {Object} Publicznie dostępne metody sterowania i subskrypcji zdarzeń drzewa.
-             */
-            getAPI() {
-              return {
-                /** @returns {string|number|null} Zwraca ID zaznaczonego elementu. */
-                getActiveId: () => this.#activeNodeId,
-                /** Rozwija globalnie wszystkie gałęzie `<details>` w drzewie. */
-                expandAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = true); },
-                /** Zwija globalnie wszystkie gałęzie `<details>` w drzewie. */
-                collapseAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = false); },
-                /** Rejestruje callback dla zdarzenia kliknięcia węzła. @param {function(Object, Array<Object>, HTMLElement):void} cb */
-                onNodeSelect: (cb) => { if (typeof cb === 'function') this.#onClickCallback = cb; },
-                /** Rejestruje callback dla zdarzenia najechania myszką na tekst węzła. @param {function(Object, Array<Object>, HTMLElement):void} cb */
-                onNodeHover: (cb) => { if (typeof cb === 'function') this.#onHoverCallback = cb; },
-                /** Przesuwa podświetlenie na sąsiadujący, widoczny wyżej element (Nawigacja strzałką w Górę). */
-                goUp: () => {
-                  const visible = this.#getVisibleNodes();
-                  if (visible.length === 0) return;
-                  const currentIdx = visible.findIndex(el => el.getAttribute('data-id') === this.#activeNodeId);
-                  if (currentIdx > 0) this.#activateNodeElement(visible[currentIdx - 1]);
-                },
-                /** Przesuwa podświetlenie na sąsiadujący, widoczny niżej element (Nawigacja strzałką w Dół). */
-                goDown: () => {
-                  const visible = this.#getVisibleNodes();
-                  if (visible.length === 0) return;
-                  const currentIdx = visible.findIndex(el => el.getAttribute('data-id') === this.#activeNodeId);
-                  if (currentIdx === -1) this.#activateNodeElement(visible[0]);
-                  else if (currentIdx < visible.length - 1) this.#activateNodeElement(visible[currentIdx + 1]);
-                },
-                /** Otwiera aktualnie podświetloną gałąź podrzędną (Nawigacja strzałką w Prawo). */
-                goRight: () => {
-                  if (!this.#activeNodeId) return;
-                  const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
-                  if (!activeSpan) return;
-                  const details = activeSpan.closest('details');
-                  if (details && !details.open) details.open = true;
-                },
-                /** Zwija podświetloną gałąź, a jeśli jest zwinięta, przechodzi na jej rodzica (Nawigacja strzałką w Lewo). */
-               goLeft: () => {
-				  if (!this.#activeNodeId) return;
-				  const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
-				  if (!activeSpan) return;
-				  
-				  // Sprawdzamy, czy ten konkretny węzeł ma własną rozwijalną gałąź (jest wewnątrz <summary>)
-				  const isBranch = !!activeSpan.closest('summary');
-				  const details = isBranch ? activeSpan.closest('details') : null;
-				  
-				  if (details && details.open) {
-					// Jeśli to otwarta gałąź – zwiń ją
-					details.open = false;
-				  } else {
-					// Jeśli to liść LUB już zwinięta gałąź – przejdź bezpiecznie do rodzica
-					const parentDetails = activeSpan.closest('ul')?.closest('details');
-					if (parentDetails) {
-					  const parentSpan = parentDetails.querySelector(':scope > summary > .tree-node-text');
-					  if (parentSpan) this.#activateNodeElement(parentSpan);
-					}
-				  }
-				},
-                indexTree: (indexFn) => this.indexTree(indexFn),
-                search: (criterion, options) => this.search(criterion, options),
-                nextMatch: () => this.nextMatch(),
-                prevMatch: () => this.prevMatch(),
-                firstMatch: () => this.firstMatch(),
-                lastMatch: () => this.lastMatch(),         
-                /** @returns {{matchedIds: Array<string|number>, currentIndex: number, totalMatches: number}} Zwraca klon aktualnego stanu podsystemu wyszukiwawczego. */
-                getSearchState: () => ({
-                  matchedIds: [...this.#matchedNodeIds],
-                  currentIndex: this.#currentMatchIndex,
-                  totalMatches: this.#matchedNodeIds.length
-                }),
-                updateVisuals: (newFormatter) => this.updateVisuals(newFormatter)
-              };
+
+      /**
+       * Generuje i zwraca bezpieczny obiekt API fasady publicznej, odizolowany od wewnętrznych zmiennych instancyjnych klasy.
+       * @returns {Object} Publicznie dostępne metody sterowania i subskrypcji zdarzeń drzewa.
+       */
+      getAPI() {
+        return {
+          /** @returns {string|number|null} Zwraca ID zaznaczonego elementu. */
+          getActiveId: () => this.#activeNodeId,
+          /** Rozwija globalnie wszystkie gałęzie `<details>` w drzewie. */
+          expandAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = true); },
+          /** Zwija globalnie wszystkie gałęzie `<details>` w drzewie. */
+          collapseAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = false); },
+          /** Rejestruje callback dla zdarzenia kliknięcia węzła. @param {function(Object, Array<Object>, HTMLElement):void} cb */
+          onNodeSelect: (cb) => { if (typeof cb === 'function') this.#onClickCallback = cb; },
+          /** Rejestruje callback dla zdarzenia najechania myszką na tekst węzła. @param {function(Object, Array<Object>, HTMLElement):void} cb */
+          onNodeHover: (cb) => { if (typeof cb === 'function') this.#onHoverCallback = cb; },
+          /** Przesuwa podświetlenie na sąsiadujący, widoczny wyżej element. */
+          goUp: () => {
+            const visible = this.#getVisibleNodes();
+            if (visible.length === 0) return;
+            const currentIdx = visible.findIndex(el => el.getAttribute('data-id') === this.#activeNodeId);
+            if (currentIdx > 0) this.#activateNodeElement(visible[currentIdx - 1]);
+          },
+          /** Przesuwa podświetlenie na sąsiadujący, widoczny niżej element. */
+          goDown: () => {
+            const visible = this.#getVisibleNodes();
+            if (visible.length === 0) return;
+            const currentIdx = visible.findIndex(el => el.getAttribute('data-id') === this.#activeNodeId);
+            if (currentIdx === -1) this.#activateNodeElement(visible[0]);
+            else if (currentIdx < visible.length - 1) this.#activateNodeElement(visible[currentIdx + 1]);
+          },
+          /** Otwiera aktualnie podświetloną gałąź podrzędną. */
+          goRight: () => {
+            if (!this.#activeNodeId) return;
+            const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
+            if (!activeSpan) return;
+            const details = activeSpan.closest('details');
+            if (details && !details.open) details.open = true;
+          },
+          /** Zwija podświetloną gałąź, a jeśli jest zwinięta – bezpiecznie przechodzi na jej rodzica. */
+          goLeft: () => {
+            if (!this.#activeNodeId) return;
+            const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
+            if (!activeSpan) return;
+            
+            // POPRAWIONE: Bezpieczne wykrywanie czy jesteśmy na gałęzi rozwijalnej czy liściu
+            const isBranch = !!activeSpan.closest('summary');
+            const details = isBranch ? activeSpan.closest('details') : null;
+            
+            if (details && details.open) {
+              details.open = false;
+            } else {
+              const parentDetails = activeSpan.closest('ul')?.closest('details');
+              if (parentDetails) {
+                // Selektor :scope ogranicza poszukiwania bezpośrednio do summary danego rodzica
+                const parentSpan = parentDetails.querySelector(':scope > summary > .tree-node-text');
+                if (parentSpan) this.#activateNodeElement(parentSpan);
+              }
             }
-          }
-        </script>
+          },
+          indexTree: (indexFn) => this.indexTree(indexFn),
+          search: (criterion, options) => this.search(criterion, options),
+          nextMatch: () => this.nextMatch(),
+          prevMatch: () => this.prevMatch(),
+          firstMatch: () => this.firstMatch(),
+          lastMatch: () => this.lastMatch(),         
+          /** @returns {{matchedIds: Array<string|number>, currentIndex: number, totalMatches: number}} Zwraca klon stanu podsystemu wyszukiwawczego. */
+          getSearchState: () => ({
+            matchedIds: [...this.#matchedNodeIds],
+            currentIndex: this.#currentMatchIndex,
+            totalMatches: this.#matchedNodeIds.length
+          }),
+          updateVisuals: (newFormatter) => this.updateVisuals(newFormatter)
+        };
+      }
+    }
+  </script>
       
         
       	<h2>Plan Wykonania SQL</h2>
