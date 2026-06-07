@@ -359,9 +359,9 @@
       #labelFormatter;
       /** @type {string|number|null} Identyfikator aktualnie aktywnego/klikniętego węzła */
       #activeNodeId = null;
-      /** @type {string} Nazwa klucza unikalnego identyfikatora w obiekcie danych (np. 'id') */
+      /** @type {string} Nazwa klucza unikalnego identyfikatora w obiekcie danych (np. 'ID') */
       #idKey;
-      /** @type {string} Nazwa klucza wskazującego na identyfikator rodzica (np. 'parent_id') */
+      /** @type {string} Nazwa klucza wskazującego na identyfikator rodzica (np. 'PARENT_ID') */
       #parentKey;
       /** @type {function(Object, HTMLElement): void | null} Callback wywoływany po kliknięciu węzła */
       #onClickCallback = null;
@@ -389,15 +389,15 @@
        * @param {HTMLElement} options.targetElement - Element DOM, do którego zostanie wstrzyknięte drzewo.
        * @param {function(Object): string} options.formatter - Funkcja zwracająca HTML reprezentujący zawartość węzła.
        * @param {Object} [options.mapping={}] - Opcjonalne mapowanie nazw pól identyfikatorów.
-       * @param {string} [options.mapping.id='id'] - Nazwa pola unikalnego klucza węzła.
-       * @param {string} [options.mapping.parentId='parent_id'] - Nazwa pola klucza rodzica.
+       * @param {string} [options.mapping.id='ID'] - Nazwa pola unikalnego klucza węzła.
+       * @param {string} [options.mapping.parentId='PARENT_ID'] - Nazwa pola klucza rodzica.
        */
       constructor({ data, targetElement, formatter, mapping = {} }) {
         this.#rows = data; 
         this.#container = targetElement; 
         this.#labelFormatter = formatter;
-        this.#idKey = mapping.id || 'id'; 
-        this.#parentKey = mapping.parentId || 'parent_id';
+        this.#idKey = mapping.id || 'ID'; 
+        this.#parentKey = mapping.parentId || 'PARENT_ID';
         this.#init();
       }
 
@@ -442,14 +442,13 @@
        * @private
        */
       #renderTreeDOM(node) {
-	    console.log(node);
+	    //console.log(node);
         const li = document.createElement('li');
         const labelHTML = this.#labelFormatter(node); 
         const nodeId = node[this.#idKey];
         if (node.children && node.children.length > 0) {
           const details = document.createElement('details');
-          //if (nodeId < 10) 
-		  details.open = true; // Domyślne rozwinięcie pierwszych kilku poziomów
+		  details.open = true; 
           const summary = document.createElement('summary');
           const span = document.createElement('span');
           span.className = 'tree-node-text'; 
@@ -585,7 +584,7 @@
             const subNodeData = this.#findNestedNodeById(this.#nestedRoot, nodeId);
             
             // 3. Przekazujemy: (nodeData, subNodeData, elementDOM)
-            this.#onHoverCallback(rawNodeData, subNodeData, hoveredSpan);
+            this.#onHoverCallback(rawNodeData, subNodeData ? subNodeData.children : [], hoveredSpan);
           }
         });
       }
@@ -662,7 +661,7 @@
           const subNodeData = this.#findNestedNodeById(this.#nestedRoot, this.#activeNodeId);
           
           // Wywołanie z trzema parametrami: (nodeData, subNodeData, element)
-          this.#onClickCallback(rawNodeData, subNodeData, spanEl);
+          this.#onClickCallback(rawNodeData, subNodeData ? subNodeData.children : [], spanEl);
         }
         
         spanEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -925,7 +924,7 @@
           const subNodeData = this.#findNestedNodeById(this.#nestedRoot, nextId);
           
           // Wywołanie z trzema parametrami: (nodeData, subNodeData, element)
-          this.#onClickCallback(currentNodeData, subNodeData, nextSpan);
+          this.#onClickCallback(currentNodeData, subNodeData ? subNodeData.children : [], nextSpan);
         }
       }
 	  
@@ -998,9 +997,9 @@
                 expandAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = true); },
                 /** Zwija globalnie wszystkie gałęzie `<details>` w drzewie. */
                 collapseAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = false); },
-                /** Rejestruje callback dla zdarzenia kliknięcia węzła. @param {function(Object, HTMLElement):void} cb */
+                /** Rejestruje callback dla zdarzenia kliknięcia węzła. @param {function(Object, Array<Object>, HTMLElement):void} cb */
                 onNodeSelect: (cb) => { if (typeof cb === 'function') this.#onClickCallback = cb; },
-                /** Rejestruje callback dla zdarzenia najechania myszką na tekst węzła. @param {function(Object, Object, HTMLElement):void} cb */
+                /** Rejestruje callback dla zdarzenia najechania myszką na tekst węzła. @param {function(Object, Array<Object>, HTMLElement):void} cb */
                 onNodeHover: (cb) => { if (typeof cb === 'function') this.#onHoverCallback = cb; },
                 /** Przesuwa podświetlenie na sąsiadujący, widoczny wyżej element (Nawigacja strzałką w Górę). */
                 goUp: () => {
@@ -1026,21 +1025,27 @@
                   if (details && !details.open) details.open = true;
                 },
                 /** Zwija podświetloną gałąź, a jeśli jest zwinięta, przechodzi na jej rodzica (Nawigacja strzałką w Lewo). */
-                goLeft: () => {
-                  if (!this.#activeNodeId) return;
-                  const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
-                  if (!activeSpan) return;
-                  const details = activeSpan.closest('details');
-                  if (details && details.open) {
-                    details.open = false;
-                  } else {
-                    const parentDetails = activeSpan.closest('ul').closest('details');
-                    if (parentDetails) {
-                      const parentSpan = parentDetails.querySelector('.tree-node-text');
-                      if (parentSpan) this.#activateNodeElement(parentSpan);
-                    }
-                  }
-                },
+               goLeft: () => {
+				  if (!this.#activeNodeId) return;
+				  const activeSpan = this.#container.querySelector(`.tree-node-text[data-id="${this.#activeNodeId}"]`);
+				  if (!activeSpan) return;
+				  
+				  // Sprawdzamy, czy ten konkretny węzeł ma własną rozwijalną gałąź (jest wewnątrz <summary>)
+				  const isBranch = !!activeSpan.closest('summary');
+				  const details = isBranch ? activeSpan.closest('details') : null;
+				  
+				  if (details && details.open) {
+					// Jeśli to otwarta gałąź – zwiń ją
+					details.open = false;
+				  } else {
+					// Jeśli to liść LUB już zwinięta gałąź – przejdź bezpiecznie do rodzica
+					const parentDetails = activeSpan.closest('ul')?.closest('details');
+					if (parentDetails) {
+					  const parentSpan = parentDetails.querySelector(':scope > summary > .tree-node-text');
+					  if (parentSpan) this.#activateNodeElement(parentSpan);
+					}
+				  }
+				},
                 indexTree: (indexFn) => this.indexTree(indexFn),
                 search: (criterion, options) => this.search(criterion, options),
                 nextMatch: () => this.nextMatch(),
@@ -1316,35 +1321,33 @@
 		   return `${node.operation} ${node.options || ''} ${node.object_name || ''}`;
 		 });
    
-		 treeAPI.onNodeSelect((nodeData, subNodeData, element) => {
-		   // subNodeData zawiera teraz obiekt { nodeUID, operation, ..., children: [...] }
-		   console.log("Dane węzła i jego dzieci:", subNodeData);
-		   
-		   // Przykład analizy podwęzłów: obliczanie ile dzieci ma ten węzeł bezpośrednio
-		   const childrenCount = subNodeData && subNodeData.children ? subNodeData.children.length : 0;
+		treeAPI.onNodeSelect((nodeData, subNodesArray, element) => {
+		// subNodesArray to teraz bezpośrednio tablica dzieci węzła
+		const childrenCount = subNodesArray ? subNodesArray.length : 0;
+		
+		console.log(subNodesArray);
 
-		   document.getElementById('click-info').innerHTML = JSON.stringify({ 
-			 nodeUID: nodeData.nodeUID, 
-			 operacja: nodeData.operation, 
-			 liczba_dzieci: childrenCount,
-			 tekst: element.textContent.trim().replace(/\s+/g, ' ') 
-		   }, null, 2);
-   
-		   updateCounter(); 
-		 });
+		document.getElementById('click-info').innerHTML = JSON.stringify({ 
+			nodeUID: nodeData.nodeUID, 
+			operacja: nodeData.operation, 
+			liczba_dzieci: childrenCount,
+			tekst: element.textContent.trim().replace(/\s+/g, ' ') 
+		}, null, 2);
+
+		updateCounter(); 
+		});
 		 
-		treeAPI.onNodeHover((nodeData, subNodeData, element) => {
-		   // Liczymy rekurencyjnie lub sprawdzamy bezpośrednie dzieci
+		treeAPI.onNodeHover((nodeData, subNodesArray, element) => {
+		  // Logika identyczna jak w onNodeSelect
+		  const childrenCount = subNodesArray ? subNodesArray.length : 0;
 		   
-		     
-		   console.log("Dane węzła i jego dzieci:", subNodeData);
-		   const totalChildren = subNodeData && subNodeData.children ? subNodeData.children.length : 0;
-		   
-		   document.getElementById('hover-info').innerHTML = 
-		     `NodeUID: ${nodeData.nodeUID}\n` +
-		     `Operacja: ${nodeData.operation}\n` +
-		     `Bezpośrednie podwęzły: ${totalChildren}`;
-		 });
+		  document.getElementById('hover-info').innerHTML = JSON.stringify({
+			nodeUID: nodeData.nodeUID,
+			operacja: nodeData.operation,
+			liczba_dzieci: childrenCount,
+			tekst: element.textContent.trim().replace(/\s+/g, ' ')
+		  }, null, 2);
+		});
 		 
 		 document.getElementById('btn-expand').addEventListener('click', () => treeAPI.expandAll());
 		 document.getElementById('btn-collapse').addEventListener('click', () => treeAPI.collapseAll());
