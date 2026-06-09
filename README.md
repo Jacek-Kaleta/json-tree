@@ -4,8 +4,6 @@ Language: **English** | [Polish (Polski)](README.pl.md)
 
 ---
 
-# Scalable Binary SQL Query Plan Tree (JsonTree)
-
 The `JsonTree` component is a high-performance, object-oriented solution built entirely in pure JavaScript (Vanilla ES6+), HTML5, and CSS3. It is specifically designed to visualize hierarchical database execution plans (such as Oracle or PostgreSQL Explain Plans). The component automatically maps flat relational data structures based on an **Adjacency List** into an object-oriented hierarchical graph and renders it as an interactive tree.
 
 This project has **zero external dependencies** or third-party libraries. The tree structure relies on native, semantic HTML5 elements, ensuring exceptional memory efficiency and rendering speed even when analyzing highly complex database operation trees with thousands of nodes.
