@@ -97,6 +97,20 @@
       gap: 10px;
       align-items: center;
     }
+	
+	.api-test-panel {
+      background: #eef2f7;
+      padding: 10px;
+      border-radius: var(--rounding);
+      border: 1px solid #d0d7de;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+      margin-top: 10px;
+    }
+	
     .search-panel {
       background: #f0f0f0;
       padding: 10px;
@@ -400,12 +414,21 @@
         this.#init();
       }
 
-      /**
+     /**
       * Inicjalizuje proces budowania struktury i renderowania drzewa w DOM. Przypina listenery zdarzeń.
       * @private
       */
       #init() {
         if (!this.#container) return;
+
+        // WALIDACJA TECHNICZNA STRUKTURY
+        const validation = this.validateStructure();
+        if (!validation.isValid) {
+          console.error("Błędy struktury drzewa:", validation.errors);
+          this.#container.innerHTML =`Error`;
+          return;
+        }
+
         this.#nestedRoot = this.#buildTreeStructure(this.#rows);
         const ulRoot = document.createElement('ul');
         ulRoot.className = 'json-tree';
@@ -465,6 +488,46 @@
           li.appendChild(span);
         }
         return li;
+      }
+
+      /**
+       * Rejestruje delegację zdarzeń click i mouseover na poziomie korzenia drzewa.
+       * Obsługuje Ctrl+Click do masowego otwierania/zamykania gałęzi podrzędnych.
+       * @param {HTMLUListElement} treeRoot - Główny element `<ul>` drzewa.
+       * @private
+       */
+      #setupEventListeners(treeRoot) {
+        treeRoot.addEventListener('click', (e) => {
+          const clickedSummary = e.target.closest('summary'); 
+          const clickedSpan = e.target.closest('.tree-node-text');
+          
+          if (clickedSummary && !clickedSpan) {
+            if (e.ctrlKey) {
+              e.preventDefault(); 
+              const currentDetails = clickedSummary.closest('details');
+              if (currentDetails) {
+                const shouldOpen = !currentDetails.open; 
+                currentDetails.open = shouldOpen;
+                currentDetails.querySelectorAll('details').forEach(d => d.open = shouldOpen);
+              }
+            } 
+            return;
+          }
+          if (clickedSpan) {
+            if (clickedSpan.closest('summary')) e.preventDefault();
+            this.#activateNodeElement(clickedSpan);
+          }
+        });
+        
+       treeRoot.addEventListener('mouseover', (e) => {
+          const hoveredSpan = e.target.closest('.tree-node-text');
+          if (hoveredSpan && this.#onHoverCallback) {
+            const nodeId = hoveredSpan.getAttribute('data-id');
+            const rawNodeData = this.#findNodeDataById(nodeId);
+            const subNodeData = this.#findNestedNodeById(this.#nestedRoot, nodeId);
+            this.#onHoverCallback(rawNodeData, subNodeData ? subNodeData.children : [], hoveredSpan);
+          }
+        });
       }
 
       /**
@@ -542,43 +605,28 @@
       }
 
       /**
-       * Rejestruje delegację zdarzeń click i mouseover na poziomie korzenia drzewa.
-       * Obsługuje Ctrl+Click do masowego otwierania/zamykania gałęzi podrzędnych.
-       * @param {HTMLUListElement} treeRoot - Główny element `<ul>` drzewa.
+       * Zwraca kolekcję elementów `<span>`, które są aktualnie widoczne dla oka użytkownika (ich rodzice `<details>` nie są zamknięci).
+       * Wykorzystywane przy nawigacji strzałkami góra/dół.
+       * @returns {Array<HTMLElement>} Tablica widocznych elementów span z tekstem węzłów.
        * @private
        */
-      #setupEventListeners(treeRoot) {
-        treeRoot.addEventListener('click', (e) => {
-          const clickedSummary = e.target.closest('summary'); 
-          const clickedSpan = e.target.closest('.tree-node-text');
-          
-          if (clickedSummary && !clickedSpan) {
-            if (e.ctrlKey) {
-              e.preventDefault(); 
-              const currentDetails = clickedSummary.closest('details');
-              if (currentDetails) {
-                const shouldOpen = !currentDetails.open; 
-                currentDetails.open = shouldOpen;
-                currentDetails.querySelectorAll('details').forEach(d => d.open = shouldOpen);
-              }
-            } 
-            return;
+      #getVisibleNodes() {
+        const nodes = [];
+        const allSpans = this.#container.querySelectorAll('.tree-node-text');
+        allSpans.forEach(span => {
+          const li = span.closest('li');
+          let parent = li.parentElement.closest('details');
+          let isVisible = true;
+          while (parent) {
+            if (!parent.open) {
+              isVisible = false;
+              break;
+            }
+            parent = parent.parentElement.closest('details');
           }
-          if (clickedSpan) {
-            if (clickedSpan.closest('summary')) e.preventDefault();
-            this.#activateNodeElement(clickedSpan);
-          }
+          if (isVisible) nodes.push(span);
         });
-        
-       treeRoot.addEventListener('mouseover', (e) => {
-          const hoveredSpan = e.target.closest('.tree-node-text');
-          if (hoveredSpan && this.#onHoverCallback) {
-            const nodeId = hoveredSpan.getAttribute('data-id');
-            const rawNodeData = this.#findNodeDataById(nodeId);
-            const subNodeData = this.#findNestedNodeById(this.#nestedRoot, nodeId);
-            this.#onHoverCallback(rawNodeData, subNodeData ? subNodeData.children : [], hoveredSpan);
-          }
-        });
+        return nodes;
       }
 
        /**
@@ -645,30 +693,65 @@
         
         spanEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
-      
+
       /**
-       * Zwraca kolekcję elementów `<span>`, które są aktualnie widoczne dla oka użytkownika (ich rodzice `<details>` nie są zamknięci).
-       * Wykorzystywane przy nawigacji strzałkami góra/dół.
-       * @returns {Array<HTMLElement>} Tablica widocznych elementów span z tekstem węzłów.
+       * Steruje procesem bezpośredniego przejścia do konkretnego indeksu wyniku wyszukiwania.
+       * @param {number} newIndex - Indeks celu wewnątrz zweryfikowanej tablicy `#matchedNodeIds`.
        * @private
        */
-      #getVisibleNodes() {
-        const nodes = [];
+      #navigateToMatch(newIndex) {
+        if (this.#matchedNodeIds.length === 0) return;
+
         const allSpans = this.#container.querySelectorAll('.tree-node-text');
         allSpans.forEach(span => {
-          const li = span.closest('li');
-          let parent = li.parentElement.closest('details');
-          let isVisible = true;
-          while (parent) {
-            if (!parent.open) {
-              isVisible = false;
-              break;
+          if (span.classList.contains(this.#activeSearchClasses.selected)) {
+            span.classList.remove(this.#activeSearchClasses.selected);
+            const spanId = span.getAttribute('data-id');
+            const isSpanMatched = this.#matchedNodeIds.includes(Number(spanId)) || this.#matchedNodeIds.includes(String(spanId));
+            
+            if (isSpanMatched) {
+              span.classList.add(this.#activeSearchClasses.matched);
+            } else {
+              span.classList.add(this.#activeSearchClasses.dimmed);
             }
-            parent = parent.parentElement.closest('details');
           }
-          if (isVisible) nodes.push(span);
+          span.classList.remove('active-branch');
         });
-        return nodes;
+
+        this.#currentMatchIndex = newIndex;
+        const nextId = this.#matchedNodeIds[this.#currentMatchIndex];
+        const nextSpan = this.#container.querySelector(`.tree-node-text[data-id="${nextId}"]`);
+
+        if (!nextSpan) return;
+
+        this.#activeNodeId = String(nextId);
+        nextSpan.classList.add('active-branch'); 
+
+        nextSpan.classList.remove(this.#activeSearchClasses.matched, this.#activeSearchClasses.dimmed);
+        nextSpan.classList.add(this.#activeSearchClasses.selected);
+
+        const currentNodeData = this.#findNodeDataById(nextId);
+        if (currentNodeData) {
+          let parentVal = currentNodeData[this.#parentKey];
+          while (parentVal !== null && parentVal !== undefined) {
+            const parentSpan = this.#container.querySelector(`.tree-node-text[data-id="${parentVal}"]`);
+            if (parentSpan) {
+              const parentDetails = parentSpan.closest('details');
+              if (parentDetails) {
+                parentDetails.open = true;
+              }
+            }
+            const parentRow = this.#rows.find(r => r[this.#idKey] == parentVal);
+            parentVal = parentRow ? parentRow[this.#parentKey] : null;
+          }
+        }
+
+        nextSpan.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+
+        if (this.#onClickCallback) {
+          const subNodeData = this.#findNestedNodeById(this.#nestedRoot, nextId);
+          this.#onClickCallback(currentNodeData, subNodeData ? subNodeData.children : [], nextSpan);
+        }
       }
 
       /**
@@ -767,7 +850,7 @@
           const id = span.getAttribute('data-id');
           if (hasMatches) {
             if (this.#matchedNodeIds.includes(Number(id)) || this.#matchedNodeIds.includes(String(id))) {
-              span.classList.add(this.#activeSearchClasses.matched);
+                  span.classList.add(this.#activeSearchClasses.matched);
             } else {
               span.classList.add(this.#activeSearchClasses.dimmed);
             }
@@ -813,63 +896,19 @@
       }
 
       /**
-       * Steruje procesem bezpośredniego przejścia do konkretnego indeksu wyniku wyszukiwania.
-       * @param {number} newIndex - Indeks celu wewnątrz zweryfikowanej tablicy `#matchedNodeIds`.
-       * @private
+       * Aktualizuje wyłącznie wygląd (HTML) węzłów w DOM na podstawie przekazanej funkcji formatującej.
+       * @param {function(Object): string} newFormatter - Nowa funkcja zwracająca kod HTML dla węzła.
        */
-      #navigateToMatch(newIndex) {
-        if (this.#matchedNodeIds.length === 0) return;
-
+      updateVisuals(newFormatter) {
+        if (typeof newFormatter !== 'function') return;
         const allSpans = this.#container.querySelectorAll('.tree-node-text');
         allSpans.forEach(span => {
-          if (span.classList.contains(this.#activeSearchClasses.selected)) {
-            span.classList.remove(this.#activeSearchClasses.selected);
-            const spanId = span.getAttribute('data-id');
-            const isSpanMatched = this.#matchedNodeIds.includes(Number(spanId)) || this.#matchedNodeIds.includes(String(spanId));
-            
-            if (isSpanMatched) {
-              span.classList.add(this.#activeSearchClasses.matched);
-            } else {
-              span.classList.add(this.#activeSearchClasses.dimmed);
-            }
+          const nodeId = span.getAttribute('data-id');
+          const nodeData = this.#findNodeDataById(nodeId);
+          if (nodeData) {
+            span.innerHTML = newFormatter(nodeData);
           }
-          span.classList.remove('active-branch');
         });
-
-        this.#currentMatchIndex = newIndex;
-        const nextId = this.#matchedNodeIds[this.#currentMatchIndex];
-        const nextSpan = this.#container.querySelector(`.tree-node-text[data-id="${nextId}"]`);
-
-        if (!nextSpan) return;
-
-        this.#activeNodeId = String(nextId);
-        nextSpan.classList.add('active-branch'); 
-
-        nextSpan.classList.remove(this.#activeSearchClasses.matched, this.#activeSearchClasses.dimmed);
-        nextSpan.classList.add(this.#activeSearchClasses.selected);
-
-        const currentNodeData = this.#findNodeDataById(nextId);
-        if (currentNodeData) {
-          let parentVal = currentNodeData[this.#parentKey];
-          while (parentVal !== null && parentVal !== undefined) {
-            const parentSpan = this.#container.querySelector(`.tree-node-text[data-id="${parentVal}"]`);
-            if (parentSpan) {
-              const parentDetails = parentSpan.closest('details');
-              if (parentDetails) {
-                parentDetails.open = true;
-              }
-            }
-            const parentRow = this.#rows.find(r => r[this.#idKey] == parentVal);
-            parentVal = parentRow ? parentRow[this.#parentKey] : null;
-          }
-        }
-
-        nextSpan.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-
-        if (this.#onClickCallback) {
-          const subNodeData = this.#findNestedNodeById(this.#nestedRoot, nextId);
-          this.#onClickCallback(currentNodeData, subNodeData ? subNodeData.children : [], nextSpan);
-        }
       }
       
       /**
@@ -907,21 +946,90 @@
         if (this.#matchedNodeIds.length === 0) return;
         this.#navigateToMatch(this.#matchedNodeIds.length - 1);
       }
-
-      /**
-       * Aktualizuje wyłącznie wygląd (HTML) węzłów w DOM na podstawie przekazanej funkcji formatującej.
-       * @param {function(Object): string} newFormatter - Nowa funkcja zwracająca kod HTML dla węzła.
+	  
+	  /**
+       * Weryfikuje poprawność struktury pod kątem cykli, wielu korzeni i osieroconych węzłów.
+       * @returns {{isValid: boolean, errors: Array<string>}}
        */
-      updateVisuals(newFormatter) {
-        if (typeof newFormatter !== 'function') return;
-        const allSpans = this.#container.querySelectorAll('.tree-node-text');
-        allSpans.forEach(span => {
-          const nodeId = span.getAttribute('data-id');
-          const nodeData = this.#findNodeDataById(nodeId);
-          if (nodeData) {
-            span.innerHTML = newFormatter(nodeData);
+      validateStructure() {
+        const errors = [];
+        const ids = new Set(this.#rows.map(r => String(r[this.#idKey])));
+        let rootCount = 0;
+
+        this.#rows.forEach(row => {
+          const pId = row[this.#parentKey];
+          if (pId === null || pId === undefined || pId === '') {
+            rootCount++;
+          } else if (!ids.has(String(pId))) {
+            errors.push(`Węzeł ID: ${row[this.#idKey]} posiada nieistniejącego rodzica (PARENT_ID: ${pId}).`);
           }
         });
+
+        if (rootCount === 0) errors.push("Brak węzła głównego (Root) w strukturze danych.");
+        if (rootCount > 1) errors.push(`Wykryto więcej niż jeden węzeł główny (${rootCount} korzeni).`);
+
+        // Detekcja cykli za pomocą algorytmu DFS
+        const visited = new Set();
+        const recStack = new Set();
+        let hasCycle = false;
+
+        const checkCycle = (id) => {
+          visited.add(id);
+          recStack.add(id);
+
+          const children = this.#rows.filter(r => String(r[this.#parentKey]) === String(id));
+          for (const child of children) {
+            const cId = String(child[this.#idKey]);
+            if (!visited.has(cId)) {
+              if (checkCycle(cId)) return true;
+            } else if (recStack.has(cId)) {
+              return true;
+            }
+          }
+          recStack.delete(id);
+          return false;
+        };
+
+        const root = this.#rows.find(r => r[this.#parentKey] === null || r[this.#parentKey] === undefined || r[this.#parentKey] === '');
+        if (root && checkCycle(String(root[this.#idKey]))) {
+          errors.push("Wykryto cykl (zapętlenie) w strukturze danych! Drzewo nie zostanie wyrenderowane.");
+        }
+
+        return { isValid: errors.length === 0, errors };
+      }
+
+      /**
+       * Dynamicznie podmienia dane i przebudowuje całe drzewo bez konieczności ponownej inicjalizacji klasy.
+       * @param {Array<Object>} newData - Nowa płaska lista wierszy planu zapytania.
+       */
+      setData(newData) {
+        this.#rows = newData;
+        this.#nestedRoot = null;
+        this.#activeNodeId = null;
+        this.#matchedNodeIds = [];
+        this.#currentMatchIndex = -1;
+        
+        if (this.#container) {
+          this.#container.innerHTML = '';
+        }
+        
+        this.#init();
+        if (this.#searchIndex) {
+          this.#searchIndex = null; // Wymuszenie reindeksacji przy kolejnym użyciu lub wywołaj ręcznie indexTree
+        }
+      }
+
+      /**
+       * Całkowicie czyści zawartość kontenera DOM drzewa.
+       */
+      destroy() {
+        if (this.#container) {
+          this.#container.innerHTML = '';
+        }
+        this.#rows = [];
+        this.#nestedRoot = null;
+        this.#activeNodeId = null;
+        this.#matchedNodeIds = [];
       }
 
       /**
@@ -932,6 +1040,184 @@
         return {
           /** @returns {string|number|null} Zwraca ID zaznaczonego elementu. */
           getActiveId: () => this.#activeNodeId,
+          /** * Zwraca surowe dane dowolnego węzła na podstawie jego ID. 
+          * @param {string|number} id 
+          * @returns {Object|null}
+          */
+          getNodeData: (id) => this.#findNodeDataById(id),
+		  
+		/**
+		* Zwraca tablicę identyfikatorów węzłów tworzących ścieżkę od podanego węzła w górę, 
+		* gdzie pierwszym elementem jest przekazane ID, a ostatnim korzeń (root) drzewa.
+		* @param {string|number} id - Identyfikator węzła startowego.
+		* @returns {Array<string|number>} Tablica złańcuchowanych ID (od dziecka do korzenia).
+		*/
+		getPathToRoot: (id) => {
+		  const chain = [];
+		  let currentId = id;
+		  
+		  while (currentId !== null && currentId !== undefined) {
+			// Szukamy wiersza w płaskiej strukturze, dopasowując ID (konwersja na String dla bezpieczeństwa typów)
+			const node = this.#rows.find(row => String(row[this.#idKey]) === String(currentId));
+			
+			if (!node) {
+			  // Jeśli przekazanego ID w ogóle nie ma w danych, dodajemy je na początek i przerywamy pętlę
+			  if (chain.length === 0) chain.push(id);
+			  break;
+			}
+			
+			// Dodajemy znalezione ID do tablicy i przechodzimy do jego rodzica
+			chain.push(node[this.#idKey]);
+			currentId = node[this.#parentKey];
+		  }
+		  return chain;
+		},  
+		getChildrenIds: (id) => {
+		  return this.#rows
+			.filter(row => String(row[this.#parentKey]) === String(id))
+			.map(row => row[this.#idKey]);
+		},
+		/**
+		 * Zwraca tablicę ID węzłów w kolejności ich wyliczania (algorytm Post-Order / Bottom-Up),
+		 * z opcjonalnym ograniczeniem głębokości zagnieżdżenia.
+		 * @param {string|number} id - ID węzła startowego (np. "0" dla całego drzewa).
+		 * @param {number} [depth] - Maksymalna głębokość przeszukiwania w głąb. Brak = do końca; 0 = tylko ten węzeł; 1 = ten węzeł + bezpośrednie dzieci.
+		 * @returns {Array<string|number>} Tablica identyfikatorów w kolejności wykonywania kroków.
+		 */
+		getExecutionOrder: (id, depth) => {
+		  const order = [];
+		  // Jeśli brak parametru depth, ustawiamy go na nieskończoność (Infinity)
+		  const maxDepth = depth === undefined ? Infinity : parseInt(depth, 10);
+
+		  const traverse = (currentId, currentDepth) => {
+			// Schodzimy do dzieci tylko wtedy, gdy nie osiągnęliśmy jeszcze maksymalnej głębokości
+			if (currentDepth < maxDepth) {
+			  const children = this.#rows.filter(
+				row => String(row[this.#parentKey]) === String(currentId)
+			  );
+
+			  children.forEach(child => {
+				// Rekurencyjne wywołanie ze zwiększeniem bieżącej głębokości o 1
+				traverse(child[this.#idKey], currentDepth + 1);
+			  });
+			}
+
+			// Po przetworzeniu dzieci (lub zablokowaniu przez głębokość) dodajemy bieżący węzeł
+			const currentNode = this.#rows.find(
+			  row => String(row[this.#idKey]) === String(currentId)
+			);
+			if (currentNode) {
+			  order.push(currentNode[this.#idKey]);
+			}
+		  };
+
+		  // Uruchomienie rekurencji z początkową głębokością równą 0
+		  traverse(id, 0);
+		  return order;
+		},
+        /**
+		 * Programowo zaznacza węzeł o danym ID, uruchamia powiązane callbacki i przewija do niego widok.
+		 * @param {string|number} id - Identyfikator węzła do zaznaczenia.
+		 * @param {boolean} [expand] - undefined: tylko pokazuje węzeł; true: rozwija wszystkie podwęzły; false: zwija wszystkie podwęzły.
+		 */
+		selectNode: (id, expand) => {
+		  const span = this.#container.querySelector(`.tree-node-text[data-id="${id}"]`);
+		  if (!span) return;
+
+		  // 1. ZAWSZE rozwijamy rodziców w górę, aby sam węzeł stał się widoczny dla użytkownika
+		  let parent = span.parentElement;
+		  while (parent && parent !== this.#container) {
+			if (parent.tagName === 'DETAILS') {
+			  parent.open = true;
+			}
+			parent = parent.parentElement;
+		  }
+		  // 2. Sterujemy podwęzłami (w dół drzewa), jeśli parametr expand został jawnie podany
+		  if (expand !== undefined) {
+			const li = span.closest('li');
+			if (li) {
+			  // Szukamy wszystkich elementów <details> w obrębie tego li (węzeł + jego dzieci)
+			  li.querySelectorAll('details').forEach(d => {
+				d.open = expand;
+			  });
+			}
+		  }
+
+		  // 3. Aktywujemy wizualnie węzeł (podświetlenie, scroll, callbacki)
+		  this.#activateNodeElement(span);
+		},
+
+		/** Resetuje wyniki wyszukiwania, zeruje liczniki oraz przywraca domyślny wygląd (usuwa klasy dimmed, matched, selected). */
+		clearSearch: () => {
+		  this.#matchedNodeIds = [];
+		  this.#currentMatchIndex = -1;
+		  const allSpans = this.#container.querySelectorAll('.tree-node-text');
+		  allSpans.forEach(span => {
+			span.classList.remove(
+			  this.#activeSearchClasses.dimmed,
+			  this.#activeSearchClasses.matched,
+			  this.#activeSearchClasses.selected
+			);
+		  });
+		},
+
+		/**
+		 * Rozwija lub zwija poddrzewo wskazanego węzła do określonego poziomu głębokości względnej.
+		 * @param {string|number} id - Identyfikator węzła bazowego (0 dla głównego elementu/root).
+		 * @param {number} [level] - Poziom zagnieżdżenia. Brak = rozwiń do końca; 0 = zwiń wszystko; >0 = rozwiń do tego poziomu.
+		 */
+		expandToLevel: (id, level) => {
+		  const targetSpan = this.#container.querySelector(`.tree-node-text[data-id="${id}"]`);
+		  if (!targetSpan) return;
+
+		  const targetLi = targetSpan.closest('li');
+		  if (!targetLi) return;
+
+		  // 1. Obsługa braku parametru level -> rozwijamy do oporu (Infinity)
+		  const maxLevel = level === undefined ? Infinity : parseInt(level, 10);
+
+		  // Pobieramy wszystkie elementy <details> w obrębie tego węzła
+		  const allDetails = targetLi.querySelectorAll('details');
+		  
+		  allDetails.forEach(details => {
+			// 2. Jeśli poziom to 0 -> zwijamy absolutnie wszystko pod spodem
+			if (maxLevel === 0) {
+			  details.open = false;
+			  return;
+			}
+			
+			// 3. Jeśli poziom to Infinity -> rozwijamy wszystko do końca
+			if (maxLevel === Infinity) {
+			  details.open = true;
+			  return;
+			}
+
+			// 4. W innym przypadku obliczamy poziom zagnieżdżenia względnego względem targetLi
+			let currentLevel = 1;
+			let parent = details.parentElement;
+			
+			while (parent && parent !== targetLi) {
+			  if (parent.tagName === 'DETAILS') currentLevel++;
+			  parent = parent.parentElement;
+			}
+			
+			// Rozwijamy tylko te, które mieszczą się w zadanym limicie
+			details.open = (currentLevel <= maxLevel);
+		  });
+		},
+
+		/** * Przełącza stan rozwinięcia/zwinięcia (open) węzła o podanym ID (o ile węzeł posiada dzieci).
+		 * @param {string|number} id 
+		 */
+		toggleNode: (id) => {
+		  const span = this.#container.querySelector(`.tree-node-text[data-id="${id}"]`);
+		  if (!span) return;
+		  const details = span.closest('details');
+		  if (details) {
+			details.open = !details.open;
+		  }
+		},
+		  
           /** Rozwija globalnie wszystkie gałęzie `<details>` w drzewie. */
           expandAll: () => { this.#container.querySelectorAll('details').forEach(d => d.open = true); },
           /** Zwija globalnie wszystkie gałęzie `<details>` w drzewie. */
@@ -996,16 +1282,52 @@
             currentIndex: this.#currentMatchIndex,
             totalMatches: this.#matchedNodeIds.length
           }),
-          updateVisuals: (newFormatter) => this.updateVisuals(newFormatter)
+          updateVisuals: (newFormatter) => this.updateVisuals(newFormatter),
+          // --- ROZSZERZENIA TECHNICZNE I ANALITYCZNE ---
+
+          /** Zwraca referencję do metody setData klasy głównej. */
+          setData: (newData) => this.setData(newData),
+
+          /** Zwraca referencję do metody destroy klasy głównej. */
+          destroy: () => this.destroy(),
+
+          /**
+           * Pobiera aktualny snapshot technicznego stanu widoczności i zaznaczenia drzewa.
+           */
+          getVisualState: () => {
+            const openIds = [];
+            this.#container.querySelectorAll('details[open]').forEach(d => {
+              const span = d.querySelector(':scope > summary > .tree-node-text');
+              if (span) openIds.push(span.getAttribute('data-id'));
+            });
+            return {
+              activeNodeId: this.#activeNodeId,
+              openNodeIds: openIds
+            };
+          },
+
+          /**
+           * Przywraca stan rozwinięcia gałęzi na podstawie obiektu stanu (snapshotu).
+           */
+          restoreVisualState: (state) => {
+            if (!state) return;
+            this.#container.querySelectorAll('details').forEach(d => d.open = false);
+            if (Array.isArray(state.openNodeIds)) {
+              state.openNodeIds.forEach(id => {
+                const span = this.#container.querySelector(`.tree-node-text[data-id="${id}"]`);
+                const details = span?.closest('details');
+                if (details) details.open = true;
+              });
+            }
+            if (state.activeNodeId) {
+              this.getAPI().selectNode(state.activeNodeId);
+            }
+          }
         };
       }
     }
   </script>
-      
-        
       	<h2>Plan Wykonania SQL</h2>
-      	<p class="subtitle">Pełny kod z zaimplementowanym i opisanym standardem JSDoc.</p>
-        
       	<div class="layout">
       		<div class="tree-side">
       			<div class="sticky-controls">
@@ -1028,6 +1350,28 @@
       					<button id="btn-toggle-circle">Przełącz kółka (on/off)</button>
       					<button id="btn-new-formatter">Nowy formater</button>
       				</div>
+					 <div class="api-test-panel">
+					  <strong>Testy API:</strong>
+					  <button id="btn-api-clear-search" title="clearSearch()">Wyczyść szukanie</button>
+					  
+					  <span style="border-left:1px solid #ccc; height:20px; margin:0 4px;"></span>  
+					  <input type="text" id="input-api-node-id" placeholder="ID węzła (np. 15)" style="width:90px; padding:4px; flex:none;" />  
+					  
+					  <span style="border-left:1px solid #ccc; height:20px; margin:0 4px;"></span>
+					  <label for="input-api-level" style="font-size:12px;">Poziom:</label>
+					 
+					  <input type="number" id="input-api-level" value="2" min="0" max="10" style="width:45px; padding:4px;" />
+					  <button id="btn-api-expand-level" title="expandToLevel(level)">Rozwiń do poziomu</button>
+					  
+					  <button id="btn-api-select" class="btn-accent" title="selectNode(id)">Zaznacz</button>
+					  <button id="btn-api-select-expand" class="btn-accent" title="selectNode(id, true)">Zaznacz + Rozwiń</button>
+					  <button id="btn-api-select-no-expand" class="btn-accent" title="selectNode(id, false)">Zaznacz + Zwiń</button>
+					  
+					  <button id="btn-api-toggle-node" title="toggleNode(id)">Przełącz gałąź</button>
+					  <button id="btn-api-get-data" title="getNodeData(id) / getSelectedNode()">Pobierz dane</button>
+					
+				
+					</div>
       			</div>
       			<div id="plan-container" circle="on"></div>
       		</div>
@@ -1042,6 +1386,21 @@
       
       			<h4 style="margin-top:15px; font-weight:400;">Aktualny Hover (onNodeHover):</h4>
       			<div id="hover-info" class="info-box">Brak danych</div>
+				
+									  <h4 style="margin-bottom: 8px; font-size: 13px; color: #555;">Zarządzanie stanem drzewa:</h4>
+					  <div style="display: flex; gap: 10px;">
+						<button id="btn-save-state" style="padding: 6px 12px; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 4px;">
+						  💾 Zapisz stan widoku
+						</button>
+						<button id="btn-restore-state" disabled style="padding: 6px 12px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; opacity: 0.5;">
+						  🔄 Odtwórz stan widoku
+						</button>
+					  </div>
+					  <div id="state-status" style="margin-top: 5px; font-size: 11px; color: #666; font-style: italic;">
+						Brak zapisanego stanu. Rozwiń kilka gałęzi i kliknij "Zapisz".
+					  </div>
+					</div>
+
       		</div>
       	</div>
       	<script name="side-resizer">
@@ -1107,8 +1466,12 @@
      * - HASH JOIN, NESTED LOOPS, MERGE JOIN -> ZAWSZE dokładnie 2 dzieci.
      * - TABLE ACCESS, INDEX -> ZAWSZE 0 dzieci (kończą strukturę gałęzi).
      */
+   /**
+     * Generuje głęboką, wielopoziomową strukturę planu SQL o poprawnej logice bazodanowej.
+     */
     function generateLargeSqlPlan(targetCount) {
       const singleChildOps = ["COUNT", "SORT", "FILTER", "VIEW", "PARTITION RANGE"];
+      const multiChildOps = ["UNION ALL", "CONCATENATION"]; // Upewnij się, że tablica jest zdefiniowana
       const binaryOps = ["HASH JOIN", "NESTED LOOPS", "MERGE JOIN"];
       const leafOps = ["TABLE ACCESS", "INDEX"];
       
@@ -1116,10 +1479,9 @@
       const tables = ["ORDERS", "CUSTOMERS", "INVOICES", "PRODUCTS"];
       
       const rows = [];
-      // Kolejka przechowuje obiekty: { id: numer_wezla, remainingChildren: ile_jeszcze_dzieci_musi_dostac }
       const queue = [];
       
-      // 1. Dodajemy główny węzeł startowy (SELECT STATEMENT przyjmuje zawsze 1 główne poddrzewo)
+      // 1. Dodajemy główny węzeł startowy
       rows.push({ 
         nodeUID: 0, 
         parentUID: null, 
@@ -1132,7 +1494,19 @@
       
       let nextId = 1;
       
-      while (nextId < targetCount && queue.length > 0) {
+      // WARUNEK ZMIENIONY: Pętla działa sztywno dopóki nie osiągnie pełnego targetCount
+      while (nextId < targetCount) {
+        
+        // RECOVERY MECHANISM: Jeśli drzewo wygasło przedwcześnie, ożywiamy je strukturalnie
+        if (queue.length === 0) {
+          const lastNode = rows[rows.length - 1];
+          // Zamieniamy ostatni dodany liść w węzeł jedno-węzłowy, aby pociągnąć drzewo dalej w głąb
+          lastNode.operation = "VIEW"; 
+          lastNode.options = "BRANCH RECOVERY";
+          lastNode.object_name = null;
+          queue.push({ id: lastNode.nodeUID, remainingChildren: 1 });
+        }
+
         const parent = queue[0];
         const parentId = parent.id;
         
@@ -1141,7 +1515,7 @@
         let tableName = null;
         let expectedChildren = 0;
         
-        // Bezpiecznik: Jeśli zbliżamy się do limitu targetCount, zmuszamy do generowania liści (0 dzieci)
+        // Bezpiecznik: Jeśli zbliżamy się do limitu targetCount, zmuszamy do generowania liści
         if (targetCount - nextId <= queue.length) {
           op = leafOps[Math.floor(Math.random() * leafOps.length)];
           expectedChildren = 0;
@@ -1149,25 +1523,23 @@
           // Losujemy kategorię operacji dla nowego węzła
           const rand = Math.random();
           if (rand < 0.25) {
-            // Reguła: Operacje jedno-węzłowe -> dokładnie 1 dziecko
             op = singleChildOps[Math.floor(Math.random() * singleChildOps.length)];
             expectedChildren = 1;
-          } else if (rand < 0.40) {
-            // Reguła: UNION ALL -> od 2 do 5 dzieci
-            op = "UNION ALL";
-            expectedChildren = Math.floor(Math.random() * 4) + 2; // 2, 3, 4 lub 5
-          } else if (rand < 0.75) {
-            // Reguła: Operacje binarne -> dokładnie 2 dzieci
+          } 
+          // POPRAWNY BLOK: Ściśle od 3 do 5 dzieci dla operacji wielowejściowych
+          else if (rand < 0.40) {
+            op = multiChildOps[Math.floor(Math.random() * multiChildOps.length)];
+            expectedChildren = Math.floor(Math.random() * 3) + 3; // Tylko 3, 4 lub 5 dzieci
+          } 
+          else if (rand < 0.75) {
             op = binaryOps[Math.floor(Math.random() * binaryOps.length)];
             expectedChildren = 2;
           } else {
-            // Reguła: Liście (operacje końcowe) -> 0 dzieci
             op = leafOps[Math.floor(Math.random() * leafOps.length)];
             expectedChildren = 0;
           }
         }
         
-        // Dodatkowe parametry dla liści (nazwa tabeli i opcja skanowania)
         if (op === "TABLE ACCESS" || op === "INDEX") {
           opt = options[Math.floor(Math.random() * options.length)];
           tableName = tables[Math.floor(Math.random() * tables.length)];
@@ -1184,35 +1556,19 @@
           elapsed_ms: Math.floor(Math.random() * 50)
         });
         
-        // Jeśli nowo utworzony węzeł sam oczekuje na dzieci, dodajemy go na koniec kolejki
         if (expectedChildren > 0) {
           queue.push({ id: nextId, remainingChildren: expectedChildren });
         }
         
         nextId++;
         
-        // Zmniejszamy licznik oczekiwanych dzieci dla aktualnego rodzica
         parent.remainingChildren--;
-        
-        // Jeśli aktualny rodzic otrzymał już wszystkie swoje dzieci, usuwamy go z początku kolejki
         if (parent.remainingChildren === 0) {
           queue.shift();
         }
       }
       
-      // Awaryjne dopełnienie struktury, gdyby pętla główna zakończyła się przed osiągnięciem targetCount
-      while (nextId < targetCount) {
-        rows.push({
-          nodeUID: nextId,
-          parentUID: rows[rows.length - 1].parentUID,
-          operation: "TABLE ACCESS",
-          options: "FULL",
-          object_name: "DUMMY_FALLBACK",
-          card: 1,
-          elapsed_ms: 1
-        });
-        nextId++;
-      }
+      // STARA WADLIWA PĘTLA "while (nextId < targetCount)" ZOSTAŁA CAŁKOWICIE USUNIĘTA!
       
       return rows;
     }
@@ -1225,7 +1581,7 @@
               <span class="node-badge">
                 <i class="cost-dot ${dotClass}"></i>
                 <strong>${node.operation}</strong>${optionsInfo}${objectInfo}
-                <span class="node-meta">(Rows: ${node.card}, Time: ${node.elapsed_ms}ms)</span>
+                <span class="node-meta">(Id: ${node.nodeUID}, Rows: ${node.card}, Time: ${node.elapsed_ms}ms)</span>
               </span>
             `;
           }
@@ -1241,7 +1597,7 @@
              <span class="node-badge">
                <i class="cost-square ${dotClass}"></i>
                <strong>${node.operation}</strong>${optionsInfo}${objectInfo}
-               <span class="node-meta">(Rows: ${node.card}, Time: ${node.elapsed_ms}ms)</span>
+               <span class="node-meta">(Id: ${node.nodeUID}, Rows: ${node.card}, Time: ${node.elapsed_ms}ms)</span>
              </span>
            `;
          }
@@ -1261,16 +1617,23 @@
    
 		treeAPI.onNodeSelect((nodeData, subNodesArray, element) => {
 		// subNodesArray to teraz bezpośrednio tablica dzieci węzła
+		const id = document.getElementById('input-api-node-id');
+		const level = parseInt(document.getElementById('input-api-level').value, 10)
+		  
 		const childrenCount = subNodesArray ? subNodesArray.length : 0;
 		
 		console.log(subNodesArray);
+		if (id) id.value = nodeData.nodeUID;
 
 		document.getElementById('click-info').innerHTML = JSON.stringify({ 
 			nodeUID: nodeData.nodeUID, 
 			operacja: nodeData.operation, 
 			liczba_dzieci: childrenCount,
 			tekst: element.textContent.trim().replace(/\s+/g, ' ') 
-		}, null, 2);
+		}, null, 2)+
+		'<br>getPathToRoot: ['+treeAPI.getPathToRoot(nodeData.nodeUID).join(', ')+']'+
+		'<br>getChildrenIds: ['+treeAPI.getChildrenIds(nodeData.nodeUID).join(', ')+']'+
+		'<br>getExecutionOrder: ['+treeAPI.getExecutionOrder(nodeData.nodeUID, level)+']';
 
 		updateCounter(); 
 		});
@@ -1363,6 +1726,121 @@
 		  else treeAPI.updateVisuals(sqlLabelFormatter); 
 		  b = ! b;
 		});
+		
+		
+		 // --- AKCJE DLA NOWYCH PRZYCISKÓW PANELU TESTOWEGO API ---
+      
+      // 1. Wyczyść Szukanie via API
+      document.getElementById('btn-api-clear-search').addEventListener('click', () => {
+        treeAPI.clearSearch();
+        searchInput.value = '';
+        updateCounter();
+      });
+
+		// 2. Rozwiń do poziomu via API
+		document.getElementById('btn-api-expand-level').addEventListener('click', () => {
+		  const level = parseInt(document.getElementById('input-api-level').value, 10);
+		  let id = document.getElementById('input-api-node-id').value.trim();
+		  
+		  // Jeśli pole tekstowe ID węzła jest puste, domyślnie przyjmij "0" (główny węzeł)
+		  if (id === '') id = '0'; 
+		  
+		  if (!isNaN(level)) {
+			treeAPI.expandToLevel(id, level);
+		  }
+		});
+
+
+      // 3. Zaznacz i Rozwiń Rodziców via API
+	  document.getElementById('btn-api-select').addEventListener('click', () => {
+        const id = document.getElementById('input-api-node-id').value.trim();
+        if (id !== '') {
+          treeAPI.selectNode(id);
+        }
+      });
+	  
+      document.getElementById('btn-api-select-expand').addEventListener('click', () => {
+        const id = document.getElementById('input-api-node-id').value.trim();
+        if (id !== '') {
+          treeAPI.selectNode(id, true);
+        }
+      });
+	  
+	  document.getElementById('btn-api-select-no-expand').addEventListener('click', () => {
+        const id = document.getElementById('input-api-node-id').value.trim();
+        if (id !== '') {
+          treeAPI.selectNode(id, false);
+        }
+      });
+
+      // 5. Przełącz węzeł (Toggle) via API
+      document.getElementById('btn-api-toggle-node').addEventListener('click', () => {
+        const id = document.getElementById('input-api-node-id').value.trim();
+        if (id !== '') {
+          treeAPI.toggleNode(id);
+        }
+      });
+
+      // 6. Pobierz dane węzła (getNodeData / getSelectedNode) via API
+      document.getElementById('btn-api-get-data').addEventListener('click', () => {
+        const inputId = document.getElementById('input-api-node-id').value.trim();
+        const activeId = treeAPI.getActiveId();
+        
+        let targetData = null;
+        let sourceUsed = "";
+
+        if (inputId !== '') {
+          targetData = treeAPI.getNodeData(inputId);
+          sourceUsed = `getNodeData(${inputId})`;
+        } else if (activeId) {
+          targetData = treeAPI.getSelectedNode();
+          sourceUsed = `getSelectedNode() [dla aktywnego ID: ${activeId}]`;
+        }
+
+        const infoBox = document.getElementById('api-info');
+        if (targetData) {
+          infoBox.innerHTML = `// Źródło: ${sourceUsed}\n` + JSON.stringify(targetData, null, 2);
+        } else {
+          infoBox.innerHTML = `Nie znaleziono danych (wpisz poprawne ID w pole lub kliknij węzeł w drzewie).`;
+        }
+      });
+	  
+	  
+	  // --- OBSŁUGA ZAPISU I ODTWORZENIA STANU WIZUALNEGO ---
+      
+      // Zmienna w wyższym zakresie do przechowywania snapshotu stanu
+      let savedVisualTreeState = null;
+
+      const btnSaveState = document.getElementById('btn-save-state');
+      const btnRestoreState = document.getElementById('btn-restore-state');
+      const stateStatus = document.getElementById('state-status');
+
+      // Obsługa przycisku "Zapisz stan widoku"
+      btnSaveState.addEventListener('click', () => {
+        // Pobieramy aktualny stan za pomocą API
+        savedVisualTreeState = treeAPI.getVisualState();
+        
+        console.log("Zapisano snapshot stanu drzewa:", savedVisualTreeState);
+        
+        // Aktywujemy przycisk odtworzenia stanu
+        btnRestoreState.disabled = false;
+        btnRestoreState.style.opacity = "1";
+        
+        // Aktualizujemy informację tekstową dla użytkownika
+        const openCount = savedVisualTreeState.openNodeIds.length;
+        const activeIdStr = savedVisualTreeState.activeNodeId ? `Aktywny ID: ${savedVisualTreeState.activeNodeId}` : "Brak aktywnego węzła";
+        stateStatus.innerText = `Zapisano stan! (Rozwiniętych gałęzi: ${openCount}, ${activeIdStr})`;
+      });
+
+      // Obsługa przycisku "Odtwórz stan widoku"
+      btnRestoreState.addEventListener('click', () => {
+        if (!savedVisualTreeState) return;
+        
+        // Przywracamy stan za pomocą API
+        treeAPI.restoreVisualState(savedVisualTreeState);
+        console.log("Przywrócono stan drzewa z pamięci podręcznej.");
+      });
+   
    
 		 window.addEventListener('keydown', (e) => {
 		   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
