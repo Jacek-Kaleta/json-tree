@@ -47,7 +47,7 @@ Bezpieczny dostęp do manipulacji drzewem odbywa się poprzez fasadę publiczną
 
 #### `setData(newData)`
 
-* **Parametry:** `newData` *(Array<Object>)* – Nowa płaska tablica relacyjna z danymi planu SQL.
+* **Parametry:** `newData` (Array<Object>) – Nowa płaska tablica relacyjna z danymi planu SQL.
 * **Typ zwracany:** `void`
 * **Opis:** Dynamicznie podmienia surowe dane wejściowe komponentu. Wywołuje pełną procedurę czyszczenia DOM, ponownej walidacji struktury oraz buduje drzewo od nowa.
 
