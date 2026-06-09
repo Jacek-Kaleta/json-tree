@@ -49,7 +49,7 @@ Secure programmatic interaction with the tree component is funneled through a pu
 
 #### `setData(newData)`
 
-* **Parameters:** `newData` *(Array<Object>)* – A new flat adjacency list representing the SQL plan.
+* **Parameters:** `newData` (Array<Object>) – A new flat adjacency list representing the SQL plan.
 * **Return Type:** `void`
 * **Description:** Dynamically replaces the raw data source. It clears the existing DOM, runs a re-validation routine, and completely rebuilds the graphical tree from scratch.
 
