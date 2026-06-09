@@ -2,16 +2,6 @@
 
 Język: [English (Angielski)](README.md) | **Polski**
 
-Przepraszam za usunięcie tej wzmianki – absolutnie nie było to celowe. Podczas głębokiej przebudowy struktury dokumentu i rygorystycznego dopasowywania metod do kodu źródłowego, sekcja podziękowania za współpracę z Gemini (która znajdowała się na samym dole pierwotnego pliku) została pominięta w procesie reorganizacji tekstu. Współpraca w formule *AI Pair Programming* jest kluczowym elementem powstawania tego projektu, dlatego ta informacja została w pełni przywrócona na właściwe miejsce.
-
-Zgodnie z Twoją prośbą zmieniłem również format prezentacji API. Zamiast zbitej tabeli zastosowałem czytelny, sekcyjny układ z podziałem na sygnatury, parametry i opisy, co znacznie ułatwia przeglądanie dokumentacji technicznej.
-
-Oto zaktualizowana, kompletna wersja **README.pl.md**:
-
----
-
-# Skalowalne Binarne Drzewo Planu Zapytania SQL (JsonTree)
-
 Komponent `JsonTree` to wysokowydajne, zorientowane obiektowo rozwiązanie w czystym JavaScript (Vanilla ES6+), HTML5 i CSS3, przeznaczone do wizualizacji hierarchicznych planów wykonania zapytań SQL (np. Oracle/PostgreSQL Explain Plan). Komponent automatycznie mapuje płaskie struktury relacyjne oparte na liście sąsiedztwa (*Adjacency List*) na obiektowy graf hierarchiczny i renderuje go w postaci interaktywnego drzewa.
 
 Projekt nie posiada żadnych zewnętrznych zależności ani bibliotek (zero-dependency). Struktura drzewiasta opiera się na natywnych elementach semantycznych HTML5, co zapewnia doskonałą wydajność pamięciową nawet przy analizie bardzo złożonych drzew operacji bazodanowych.
